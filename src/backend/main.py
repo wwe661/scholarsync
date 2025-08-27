@@ -529,49 +529,70 @@ class UserIn(BaseModel):
     email: EmailStr
     password: str
 
+@app.post("/check-email")
+def check_email(user: UserIn):
+    """
+    Check if the email already exists in the database
+    """
+    if users_col.find_one({"email": user.email}):
+        return {"exists": True}
+    return {"exists": False}
 
 @app.post("/signup")
 def signup(user: UserIn):
-    usr = [_ for _ in users_col.find({"username": user.username})]
-    if len(usr) > 0:
-        raise HTTPException(status_code=400, detail="Username already exists")
-    today = datetime.datetime.utcnow()
+    # Check if email already exists before creating a new user
     if users_col.find_one({"email": user.email}):
-        return {"ok": True, "msg": "Account already exists", "email": user.email}
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    # Continue with the rest of the signup process
+    today = datetime.datetime.utcnow()
+
     result = users_col.insert_one({
         "email": user.email,
         "password": user.password,  # (hash in real apps)
         "created_at": today,
         "prefs": {}
     })
-    #--- notification ---# 
+
     # Create welcome notification
     create_notification(
         mail=user.email,
         type="welcome",
-        text=f"Welcome, {user.username}! Your account has been created successfully."
+        text=f"Welcome, {user.email}! Your account has been created successfully."
     )
 
     # Send welcome email
     send_email(
         user.email,
         "Welcome to ScholarApp!",
-        f"Welcome, {user.username}! We’re excited to help you find scholarships."
+        f"Welcome, {user.email}! We’re excited to help you find scholarships."
     )
     
     return {"ok": True, "msg": "Signup successful", "email": user.email}
 
 @app.post("/login")
 def login(user: UserIn):
+    # Check if the email and password match the admin credentials
+    if user.email == "admin@gmail.com" and user.password == "Admin@123":
+        return {
+            "ok": True,
+            "msg": "Login successful",
+            "email": user.email,
+            "user_id": "admin",  # Mark this as an admin user
+            "is_admin": True  # Add this flag to identify admin
+        }
+
+    # Normal login logic for other users
     found = users_col.find_one({"email": user.email})
     if not found or found.get("password") != user.password:
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    
     return {
         "ok": True,
         "msg": "Login successful",
-        "email": user.email,                # <— IMPORTANT
+        "email": user.email,
         "user_id": str(found["_id"]),
-        "prefs": found.get("prefs", {})     # optional, handy for prefilling forms
+        "is_admin": False  # Mark as non-admin for regular users
     }
 
 # in main.py
