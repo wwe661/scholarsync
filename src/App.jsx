@@ -1,17 +1,27 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import Navbar from './components/navbar';
-import Search from './pages/searchScholar';
-import MatchScholar from './pages/matchScholar';
-import DataForm from './pages/dataform'; 
-import DataForm2 from './pages/dataform2';
-import Home from './pages/Home';
-import './App.css';
-import AuthPage from './pages/AuthPage';
-import UniSearch from './pages/UniSearch';
-import DataFormuni from './pages/dataformUni';
-import DataFormuni2 from './pages/dataformUni2';
-import MatchUni from './pages/matchUni';
-import CostPredict from './pages/CostPredict';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useLocation,
+  Navigate,
+} from "react-router-dom";
+//import { BrowserRouter as Router, Routes, Route, useLocation} from 'react-router-dom';
+import Navbar from "./components/navbar";
+import Search from "./pages/searchScholar";
+import MatchScholar from "./pages/matchScholar";
+import DataForm from "./pages/dataform";
+import DataForm2 from "./pages/dataform2";
+import Home from "./pages/Home";
+import "./App.css";
+import AuthPage from "./pages/AuthPage";
+import UniSearch from "./pages/UniSearch";
+import DataFormuni from "./pages/dataformUni";
+import DataFormuni2 from "./pages/dataformUni2";
+import MatchUni from "./pages/matchUni";
+import CostPredict from "./pages/CostPredict";
+import ScholarAnalysis from "./pages/scholar_analysis";
+import UniAnalysis from "./pages/uni_analysis";
+
 function AppContent() {
   const location = useLocation();
   const hideNavbar = location.pathname === "/authpage";
@@ -31,7 +41,14 @@ function AppContent() {
           <Route path="/data-form-uni" element={<DataFormuni />} />
           <Route path="/data-form-uni2" element={<DataFormuni2 />} />
           <Route path="/authpage" element={<AuthPage />} />
-           <Route path="/cost-prediction" element={<CostPredict />} />
+          <Route path="/cost-prediction" element={<CostPredict />} />
+          <Route path="/analysis/scholarships" element={<ScholarAnalysis />} />
+          <Route path="/uni-analysis" element={<UniAnalysis />} />
+
+          <Route
+            path="/analysis"
+            element={<Navigate to="/analysis/scholarships" replace />}
+          />
         </Routes>
       </div>
     </>

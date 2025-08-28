@@ -104,29 +104,39 @@ const Navbar = () => {
   const [notification, setNotification] = useState([]);
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if(!user) return; // no user, no notifications
+    if (!user) return; // no user, no notifications
     const getnoti = async () => {
-    if (user) {
-      try{
-        const notis = await fetch(`${API_BASE}/api/notification/unread?mail=${user.email}`, {
-          method: "GET",
-          headers: {"Content-Type": "application/json"}
-        });
-        
-        if (!notis.ok) {
-          const text = await notis.text().catch(() => "");
-          throw new Error(`HTTP ${notis.status}: ${text || "request failed"}`);
-        }
+      if (user) {
+        try {
+          const notis = await fetch(
+            `${API_BASE}/api/notification/unread?mail=${user.email}`,
+            {
+              method: "GET",
+              headers: { "Content-Type": "application/json" },
+            }
+          );
 
-        const notidata = await notis.json().catch(() => ({}));
+          if (!notis.ok) {
+            const text = await notis.text().catch(() => "");
+            throw new Error(
+              `HTTP ${notis.status}: ${text || "request failed"}`
+            );
+          }
 
-        if (notidata){
-          setNotification(Array.isArray(notidata.notifications)?notidata.notifications : []);
+          const notidata = await notis.json().catch(() => ({}));
+
+          if (notidata) {
+            setNotification(
+              Array.isArray(notidata.notifications)
+                ? notidata.notifications
+                : []
+            );
+          }
+        } catch (err) {
+          console.error("Fetch error:", err);
         }
-      }catch (err) {
-        console.error("Fetch error:", err);
       }
-    }};
+    };
     getnoti();
   }, [user]);
 
@@ -138,17 +148,14 @@ const Navbar = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mail: user.email }),
       });
-  
+
       // Instead of clearing completely, mark locally as read
-      setNotification((prev) =>
-        prev.map((n) => ({ ...n, read: true }))
-      );
+      setNotification((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch (err) {
       console.error("Mark-as-read error:", err);
     }
-  };  
-  
-  
+  };
+
   return (
     <nav className="bg-[#254085] shadow-md px-3 py-3 flex justify-between ml-4 mr-4">
       {/* Branding */}
@@ -188,10 +195,11 @@ const Navbar = () => {
 
         <MenuWithDropdown
           label="Analysis"
-          baseTo="/analysis"
+          //baseTo="/analysis"
+          baseTo="/analysis/scholarships"
           items={[
-            { to: "/analysis?scope=scholarships", text: "Scholarships" },
-            { to: "/analysis?scope=universities", text: "Universities" },
+            { to: "/analysis/scholarships", text: "Scholarships" },
+            { to: "/uni-analysis", text: "Universities" },
           ]}
         />
       </ul>
@@ -199,42 +207,42 @@ const Navbar = () => {
       {/* Right-side auth area */}
       {user ? (
         <div className="flex items-center gap-3">
-          {notification.length>0 ? (
-          <div className="relative">
-          <div
-            onClick={() => {
-              setOpen((prev) => !prev);
-              if (!open && notification.length > 0) {
-                markAsRead(); // mark when user first opens dropdown
-              }
-            }}
-            className="w-8 h-8 bg-white text-[#254085] rounded-full flex items-center justify-center font-bold cursor-pointer relative"
-          >
-            {initial}
-            {notification.some((n) => !n.read) && (
-              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-            )}
-          </div>
-        
-          {open && (
-            <div className="absolute right-0 mt-2 w-64 bg-white shadow-lg rounded-lg text-[#254085] z-50">
-              {notification.length > 0 ? (
-                notification.map((n, i) => (
-                  <div key={i} className="px-4 py-2 border-b last:border-0">
-                    {n.text}
-                  </div>
-                ))
-              ) : (
-                <div className="px-4 py-2">No new notifications</div>
+          {notification.length > 0 ? (
+            <div className="relative">
+              <div
+                onClick={() => {
+                  setOpen((prev) => !prev);
+                  if (!open && notification.length > 0) {
+                    markAsRead(); // mark when user first opens dropdown
+                  }
+                }}
+                className="w-8 h-8 bg-white text-[#254085] rounded-full flex items-center justify-center font-bold cursor-pointer relative"
+              >
+                {initial}
+                {notification.some((n) => !n.read) && (
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                )}
+              </div>
+
+              {open && (
+                <div className="absolute right-0 mt-2 w-64 bg-white shadow-lg rounded-lg text-[#254085] z-50">
+                  {notification.length > 0 ? (
+                    notification.map((n, i) => (
+                      <div key={i} className="px-4 py-2 border-b last:border-0">
+                        {n.text}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2">No new notifications</div>
+                  )}
+                </div>
               )}
             </div>
+          ) : (
+            <div className="w-8 h-8 bg-white text-[#254085] rounded-full flex items-center justify-center font-bold">
+              {initial}
+            </div>
           )}
-        </div>        
-          )
-          :(
-          <div className="w-8 h-8 bg-white text-[#254085] rounded-full flex items-center justify-center font-bold">
-          {initial}
-          </div>)}
           <button
             onClick={handleLogout}
             className="px-4 py-2 text-sm font-medium rounded-lg border border-white text-white hover:bg-white hover:text-[#254085] transition"

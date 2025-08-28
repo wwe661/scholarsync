@@ -30,6 +30,11 @@ class UniPrefsIn(BaseModel):
 
 
 from matchuni import router as matchuni_router
+from analysis_routes import router as analysis_router
+from uni_analysis_routes import router as uni_analysis_router
+
+
+
 
 
 # after you create `app = FastAPI()`:
@@ -93,7 +98,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 # --- create the ASGI app (must be top-level and named `app`) ---
-
+app.state.mongo = client
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # or ["*"] to allow all
@@ -104,6 +109,11 @@ app.add_middleware(
 
 app.include_router(match_router)
 app.include_router(matchuni_router)
+app.include_router(analysis_router, tags=["analysis"])
+# after app = FastAPI(...)
+app.include_router(uni_analysis_router)        # ✅ no extra prefix here
+
+
 # --- CORS ---
 # app.add_middleware(
 #     CORSMiddleware,
