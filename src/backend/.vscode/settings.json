@@ -1,0 +1,9 @@
+{
+  "python.defaultInterpreterPath": "E:/Scholoar_Uni/scholarsync/src/backend/venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "E:/Scholoar_Uni/scholarsync/src/backend/venv/Lib/site-packages"
+  ]
+}
+
+
+
