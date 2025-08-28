@@ -7,100 +7,218 @@ const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState(""); // Confirm Password state
   const [msg, setMsg] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [loading, setLoading] = useState(false); // Loading state
   const navigate = useNavigate();
+
+  // Password strength check (min 8 chars, 1 number, 1 special char)
+  const isStrongPassword = (password) => {
+    const regex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    return regex.test(password);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMsg("");
+    setPasswordError("");
+    setEmailError("");
+    setLoading(true); // Start loading
 
-    try {
-      const endpoint = isLogin ? "/login" : "/signup";
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      // Handle non-2xx HTTP
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        setMsg(text || "Request failed");
+    // If sign up, check password strength and match
+    if (!isLogin) {
+      if (!isStrongPassword(password)) {
+        setPasswordError("Password must be at least 8 characters long, include a number, and a special character.");
+        setLoading(false); // Stop loading
         return;
       }
 
-      const data = await res.json().catch(() => ({}));
-
-      // Handle { ok: false } from backend
-      if (data && data.ok === false) {
-        setMsg(data.detail || data.msg || "Invalid credentials");
+      // Check if passwords match
+      if (password !== confirmPassword) {
+        setPasswordError("Passwords do not match.");
+        setLoading(false); // Stop loading
         return;
       }
 
-      // Resolve email + user id (if backend provides)
-      const resolvedEmail = (data && (data.email || data.user?.email)) || email;
-      const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
+      try {
+        // Check if email already exists for signup
+        const emailCheckRes = await fetch(`${API_BASE}/check-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
 
-      // Store a canonical user object the Navbar can read
-      const user = {
-        email: resolvedEmail,
-        name: resolvedEmail?.split("@")[0] || "User",
-        userId,
-      };
-      localStorage.setItem("user", JSON.stringify(user));
+        const emailCheckData = await emailCheckRes.json();
 
-      // Keep your existing keys too (backward-compat)
-      localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
-      localStorage.setItem("auth_email", resolvedEmail);
-      localStorage.setItem("userId", userId);
+        if (emailCheckRes.ok && emailCheckData.exists) {
+          setEmailError("Email already exists. Please try another one.");
+          setLoading(false); // Stop loading
+          return;
+        }
 
-      // Tell listeners (Navbar) that auth changed
-      window.dispatchEvent(new Event("auth-changed"));
+        const res = await fetch(`${API_BASE}/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
 
-      // Go to first form
-      navigate("/");
-    } catch (err) {
-      setMsg(err.message || "Something went wrong");
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          setMsg(text || "Request failed");
+          setLoading(false); // Stop loading
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data && data.ok === false) {
+          setMsg(data.detail || data.msg || "Invalid credentials");
+          setLoading(false); // Stop loading
+          return;
+        }
+
+        const resolvedEmail = (data && (data.email || data.user?.email)) || email;
+        const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
+
+        const user = {
+          email: resolvedEmail,
+          name: resolvedEmail?.split("@")[0] || "User",
+          userId,
+        };
+        localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
+        localStorage.setItem("auth_email", resolvedEmail);
+        localStorage.setItem("userId", userId);
+
+        window.dispatchEvent(new Event("auth-changed"));
+
+        navigate("/"); // navigate to home page or any other route
+      } catch (err) {
+        setMsg(err.message || "Something went wrong");
+        setLoading(false); // Stop loading
+      }
+    } else {
+      // Handle login logic here (without the password confirm)
+      try {
+        const res = await fetch(`${API_BASE}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          setMsg(text || "Request failed");
+          setLoading(false); // Stop loading
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data && data.ok === false) {
+          setMsg(data.detail || data.msg || "Invalid credentials");
+          setLoading(false); // Stop loading
+          return;
+        }
+
+        const resolvedEmail = (data && (data.email || data.user?.email)) || email;
+        const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
+
+        const user = {
+          email: resolvedEmail,
+          name: resolvedEmail?.split("@")[0] || "User",
+          userId,
+        };
+        localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
+        localStorage.setItem("auth_email", resolvedEmail);
+        localStorage.setItem("userId", userId);
+
+        window.dispatchEvent(new Event("auth-changed"));
+
+        // Check if the login is with the admin credentials
+        if (resolvedEmail === "admin@gmail.com" && password === "Admin@123") {
+          navigate("/admin"); // Redirect to admin page
+        } else {
+          navigate("/"); // Navigate to home page for regular users
+        }
+      } catch (err) {
+        setMsg(err.message || "Something went wrong");
+        setLoading(false); // Stop loading
+      }
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-sm">
-        <h2 className="text-xl font-bold mb-4">{isLogin ? "Login" : "Sign Up"}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            className="w-full border px-3 py-2 rounded"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full border px-3 py-2 rounded"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <button
-            type="submit"
-            className="w-full bg-[#254085] text-white py-2 rounded hover:bg-[#1f356d]"
-          >
-            {isLogin ? "Login" : "Sign Up"}
-          </button>
-        </form>
+    <div className="flex min-h-screen justify-center items-center bg-[#254085]">
+      <div className="flex max-w-4xl bg-white rounded-3xl shadow-lg">
+        <div className="flex-1 p-8">
+          <h1 className="text-3xl font-semibold text-[#003087] mb-6">{isLogin ? "Login Now" : "Sign Up Now"}</h1>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <input
+              type="email"
+              placeholder="Email or Username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full p-3 border border-[#ccc] rounded-lg bg-[#f0f4ff]"
+            />
+            {emailError && <p className="text-red-600 text-sm">{emailError}</p>}
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full p-3 border border-[#ccc] rounded-lg bg-[#f0f4ff]"
+            />
+            {!isLogin && (
+              <input
+                type="password"
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="w-full p-3 border border-[#ccc] rounded-lg bg-[#f0f4ff]"
+              />
+            )}
+            {passwordError && <p className="text-red-600 text-sm">{passwordError}</p>}
+            <button
+              type="submit"
+              className="w-full p-3 bg-[#003399] text-white rounded-lg hover:bg-[#002080] font-semibold"
+              disabled={loading} // Disable button while loading
+            >
+              {isLogin ? "LOGIN" : "SIGN UP"}
+            </button>
+          </form>
 
-        {msg && <p className="mt-3 text-sm text-center text-red-600">{msg}</p>}
+          {msg && <p className="text-center text-red-600 mt-3">{msg}</p>}
 
-        <p
-          className="mt-4 text-center text-blue-600 cursor-pointer"
-          onClick={() => setIsLogin(!isLogin)}
-        >
-          {isLogin ? "Don't have an account? Sign up" : "Already have an account? Login"}
-        </p>
+          <div className="text-center mt-6">
+            <p className="text-sm text-gray-500">Or login with</p>
+            <div className="flex justify-center gap-3 mt-4">
+              <button className="px-6 py-2 bg-[#1877F2] text-white rounded-lg">Facebook</button>
+              <button className="px-6 py-2 bg-[#4285F4] text-white rounded-lg">Google</button>
+            </div>
+          </div>
+
+          <p className="text-center text-sm text-blue-600 mt-6 cursor-pointer">
+            {isLogin ? "Not a member?" : "Already have an account?"}{" "}
+            <span
+              className="font-semibold cursor-pointer text-orange-500"
+              onClick={() => setIsLogin(!isLogin)}
+            >
+              {isLogin ? "Sign Up Now" : "Login Now"}
+            </span>
+          </p>
+        </div>
+
+        <div className="hidden lg:block flex-1 bg-white p-8 text-center">
+          <img src="/login.jpg" alt="Login Graphic" className="max-w-[450px] mx-auto mb-3" />
+          <h2 className="text-3xl font-semibold text-[#003087]">Scholar Sync</h2>
+        </div>
       </div>
     </div>
   );
