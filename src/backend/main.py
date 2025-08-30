@@ -563,19 +563,35 @@ def signup(user: UserIn):
         "created_at": today,
         "prefs": {}
     })
-
+    name = user.email.split("@")[0]
     # Create welcome notification
     create_notification(
         mail=user.email,
         type="welcome",
-        text=f"Welcome, {user.email}! Your account has been created successfully."
+        text=f"Welcome, {name}! Your account has been created successfully."
     )
-
+    welcome_html = """
+    <html>
+    <body style="font-family: Arial; background:#f4f4f4; padding:20px;">
+        <div style="max-width:600px;margin:auto;background:white;padding:20px;border-radius:8px;">
+        <h2 style="color:#254085;">🎉 Welcome to Our System!</h2>
+        <p>Hi <b>"""+ name +"""</b>,</p>
+        <p>We’re excited to have you onboard 🚀</p>
+        <a href="https://localhost:5173" 
+            style="display:inline-block;background:#254085;color:white;padding:12px 20px;
+                    text-decoration:none;border-radius:5px;margin-top:20px;">
+            Get Started
+        </a>
+        <p style="margin-top:30px;">Cheers,<br> ScholarSync Team </p>
+        </div>
+    </body>
+    </html>
+    """
     # Send welcome email
     send_email(
         user.email,
         "Welcome to ScholarApp!",
-        f"Welcome, {user.email}! We’re excited to help you find scholarships."
+        welcome_html
     )
     
     return {"ok": True, "msg": "Signup successful", "email": user.email}
@@ -925,15 +941,43 @@ def check_deadlines():
         upcoming = col.find({
             "deadline": {"$gte": today, "$lte": next_7_days}
         }).sort("deadline", 1).limit(3)
-        scholars = [i['scholarship_name'] for i in upcoming]    
+        scholars = []
+        for i in upcoming:
+            duein = (i["deadline"].date() - today.date()).days
+            scholars.append(f"{i['scholarship_name']} ( due in {duein} days)") 
+        
+   
         if scholars.__len__() > 0 :
+            for i in scholars:
+                scholars_text = "<li><b>{i}</b></li>"
             for user in users_col.find():
+                name = user.get("email").split("@")[0]
                 text = ", ".join(scholars)
+                
+                reminder_html = """
+                <html>
+                <body style="font-family: Arial; background:#f9f9f9; padding:20px;">
+                    <div style="max-width:600px;margin:auto;background:white;padding:20px;border-radius:8px;">
+                    <h2 style="color:#e74c3c;">⏰ Upcoming Deadlines</h2>
+                    <p>Hello <b>"""+ name +"""</b>,</p>
+                    <p>The following Scholars are due soon:</p>
+                    <ul>"""+scholars_text+"""
+                    </ul>
+                    <a href="https://localhost:5173" 
+                        style="display:inline-block;background:#e74c3c;color:white;padding:12px 20px;
+                                text-decoration:none;border-radius:5px;margin-top:20px;">
+                        View Tasks
+                    </a>
+                    <p style="margin-top:30px;">Best,<br>ScholarSync</p>
+                    </div>
+                </body>
+                </html>
+                """ 
                 create_notification(
                     user["email"], "deadline_reminder",
                     f"Reminder: These scholarships are due within 7 days: {text}"
                 )
-                send_email(user["email"], "Scholarship Deadlines", f"Closing today: {text}")
+                send_email(user["email"], "Scholarship Deadlines", reminder_html)
 
 def create_notification(mail, type, text):
     print("noti create", mail, type, text)
@@ -961,22 +1005,24 @@ def manual_cleanup(days: int = 7):
         "created_at": {"$lt": cutoff}
     })
     return {"ok": True, "deleted": result.deleted_count}
-
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-def send_email(to_email, subject, body):
+def send_email(to_email, subject, body_html, body_text="This email requires an HTML-compatible client."):
     print('mailing')
     from_email = "wwewinter661@gmail.com"
-    password = "hohg sbdr phld touc"  # use app password for Gmail
+    password = "hohg sbdr phld touc"  # Gmail app password
 
     # Create the email
-    msg = MIMEMultipart()
+    msg = MIMEMultipart("alternative")
     msg['From'] = from_email
     msg['To'] = to_email
     msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
+
+    # Attach plain-text and HTML versions
+    msg.attach(MIMEText(body_text, "plain"))
+    msg.attach(MIMEText(body_html, "html"))
 
     # Connect to Gmail SMTP server
     server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -986,7 +1032,3 @@ def send_email(to_email, subject, body):
     server.quit()
 
     print(f"Email sent to {to_email}")
-    # Plug in SMTP or SendGrid here
-    print(f"Sending email -> {to_email}: {subject} - {body}")
-
-
