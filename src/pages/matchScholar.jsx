@@ -8,6 +8,64 @@ function getAuthUser() {
   catch { return {}; }
 }
 
+/* ---------- deadline helpers (ISO + dd/Mon/yy) ---------- */
+const MONTHS = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
+
+function parseDdMonYy(s) {
+  const txt = (s || "").trim();
+  if (!txt || /^(no\s*fix|not\s*specified)$/i.test(txt)) return null;
+  const m = txt.match(/^(\d{1,2})\/([A-Za-z]{3})\/(\d{2})$/);
+  if (!m) return null;
+  const [, ddStr, monStr, yyStr] = m;
+  const dd = parseInt(ddStr, 10);
+  const mon = MONTHS[monStr];
+  const yy = parseInt(yyStr, 10);
+  if (Number.isNaN(dd) || mon == null || Number.isNaN(yy)) return null;
+  const d = new Date(2000 + yy, mon, dd);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function parseDeadlineFromItem(it) {
+  // 1) Try ISO in `deadline`
+  if (it?.deadline) {
+    const d1 = new Date(it.deadline);
+    if (!isNaN(d1.getTime())) return d1;
+    // if someone stored dd/Mon/yy in `deadline`, catch it:
+    const d2 = parseDdMonYy(it.deadline);
+    if (d2) return d2;
+  }
+  // 2) Try formatted string in `deadlineDate`
+  if (it?.deadlineDate) {
+    const d3 = parseDdMonYy(it.deadlineDate);
+    if (d3) return d3;
+  }
+  return null;
+}
+
+function isPast(it) {
+  const d = parseDeadlineFromItem(it);
+  if (!d) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return d < today;
+}
+
+function displayDeadline(it) {
+  if (it?.deadlineDate && !/^(no\s*fix)$/i.test(it.deadlineDate)) {
+    return it.deadlineDate; // already pretty
+  }
+  if (it?.deadline) {
+    const d = new Date(it.deadline);
+    if (!isNaN(d.getTime())) {
+      // show YYYY-MM-DD
+      return d.toISOString().slice(0, 10);
+    }
+    // fallback (if it's some other string)
+    return String(it.deadline);
+  }
+  return "Not specified";
+}
+/* -------------------------------------------------------- */
+
 const MatchScholar = () => {
   const [me, setMe] = useState(getAuthUser());
   const [items, setItems] = useState([]);
@@ -55,14 +113,11 @@ const MatchScholar = () => {
   useEffect(() => {
     const run = async () => {
       if (!me?.email) {
-        setItems([]);
-        setErr("");
-        setLoading(false);
+        setItems([]); setErr(""); setLoading(false);
         return;
       }
 
-      setLoading(true);
-      setErr("");
+      setLoading(true); setErr("");
       try {
         if (scholarPrefsFilled) {
           const buildRes = await fetch(
@@ -70,12 +125,9 @@ const MatchScholar = () => {
             { method: "POST" }
           );
           if (!buildRes.ok) throw new Error(`Build HTTP ${buildRes.status}`);
-          const list = await readResults(me.email);
-          setItems(list);
-        } else {
-          const list = await readResults(me.email);
-          setItems(list);
         }
+        const list = await readResults(me.email);
+        setItems(list);
       } catch (e) {
         console.error(e);
         setErr("Couldn’t load matched scholarships.");
@@ -84,7 +136,6 @@ const MatchScholar = () => {
         setLoading(false);
       }
     };
-
     run();
   }, [me?.email, scholarPrefsFilled]);
 
@@ -155,7 +206,9 @@ const MatchScholar = () => {
               : (s.type || "—"),
             s.level || "—",
           ].filter(Boolean);
-          const deadline = s.deadline || "Not specified";
+
+          const deadlineTxt = displayDeadline(s);
+          const past = isPast(s);
           const pct = Math.max(0, Math.min(100, Number(s.rank) || 0));
 
           return (
@@ -183,8 +236,14 @@ const MatchScholar = () => {
                 ))}
               </div>
 
-              <div className="text-sm font-semibold mb-4 text-emerald-700">
-                Deadline : {deadline}
+              <div className="text-sm font-semibold mb-4">
+                <div>
+                  <span className="text-gray-800">Deadline : </span>
+                  <span className={past ? "text-red-600" : "text-emerald-700"}>
+                    {deadlineTxt}
+                  </span>
+                </div>
+
                 <div className="w-full h-2 bg-gray-200 rounded-full mb-2 mt-5">
                   <div
                     className="h-full bg-emerald-500 rounded-full"

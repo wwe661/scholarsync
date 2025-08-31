@@ -23,7 +23,7 @@ import MatchUni from "./pages/matchUni";
 import CostPredict from "./pages/CostPredict";
 import ScholarAnalysis from "./pages/scholar_analysis";
 import UniAnalysis from "./pages/uni_analysis";
-
+import Profile from './pages/Profile';
 function AppContent() {
   const location = useLocation();
   const hideNavbar = /^\/(authpage|admin)(\/|$)/.test(location.pathname);
@@ -39,6 +39,7 @@ function AppContent() {
           <Route path="/data-form" element={<DataForm />} />
           <Route path="/next-page" element={<DataForm2 />} />
           <Route path="/search" element={<Search />} />
+             <Route path="/edit" element={<Profile />} />
           <Route path="/search-university" element={<UniSearch />} />
           <Route path="/data-form-uni" element={<DataFormuni />} />
           <Route path="/data-form-uni2" element={<DataFormuni2 />} />

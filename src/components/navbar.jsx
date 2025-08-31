@@ -13,6 +13,8 @@ const readAuth = () => {
   }
 };
 
+const firstInitial = (nameOrEmail = "") =>
+  (nameOrEmail.trim()[0] || "U").toUpperCase();
 /** Reusable top-level menu item with a dropdown */
 const MenuWithDropdown = ({ label, baseTo, items }) => {
   const [open, setOpen] = useState(false);
@@ -70,7 +72,15 @@ const MenuWithDropdown = ({ label, baseTo, items }) => {
 const Navbar = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(() => readAuth());
+  const [notification, setNotification] = useState([]);
+  const [open, setOpen] = useState(false);
 
+    // NEW: avatar state
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [avatarError, setAvatarError] = useState(false);
+
+  // derive initial
+  const initial = firstInitial(user?.name || user?.email || "User");
   useEffect(() => {
     const refresh = () => setUser(readAuth());
 
@@ -88,21 +98,52 @@ const Navbar = () => {
       window.removeEventListener("storage", onStorage);
     };
   }, []);
+// Fetch profile pic when logged in (and whenever auth changes)
+  const fetchAvatar = async () => {
+    try {
+      const userId = localStorage.getItem("userId");
+      if (!user || !userId || userId === "admin") {
+        setAvatarUrl(null);
+        return;
+      }
+      const r = await fetch(`${API_BASE}/users/${userId}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      const url = (data.profilePic || "").trim();
+      setAvatarError(false);
+      setAvatarUrl(url || null);
+    } catch (e) {
+      // fall back to initial
+      setAvatarUrl(null);
+      setAvatarError(true);
+    }
+  };
+
+   useEffect(() => {
+    if (user) fetchAvatar();
+  }, [user]);
+
+  // Also react to manual profile updates from Profile.jsx
+  useEffect(() => {
+    const onProfileChanged = () => fetchAvatar();
+    window.addEventListener("auth-changed", onProfileChanged); // you already dispatch this after save
+    return () => window.removeEventListener("auth-changed", onProfileChanged);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem("auth_email");
     localStorage.removeItem("userId");
-
-    setUser(null); // update UI immediately
+    setUser(null);
+    setAvatarUrl(null);
+    setAvatarError(false);
     window.dispatchEvent(new Event("auth-changed"));
     navigate("/");
   };
 
-  const initial = (user?.name?.[0] || user?.email?.[0] || "U").toUpperCase();
+  
 
-  const [notification, setNotification] = useState([]);
-  const [open, setOpen] = useState(false);
+
   useEffect(() => {
     if (!user) return; // no user, no notifications
     const getnoti = async () => {
@@ -204,50 +245,83 @@ const Navbar = () => {
         />
       </ul>
 
-      {/* Right-side auth area */}
+      {/* Right side */}
       {user ? (
         <div className="flex items-center gap-3">
-          {notification.length > 0 ? (
-            <div className="relative">
-              <div
-                onClick={() => {
-                  setOpen((prev) => !prev);
-                  if (!open && notification.length > 0) {
-                    markAsRead(); // mark when user first opens dropdown
-                  }
-                }}
-                className="w-8 h-8 bg-white text-[#254085] rounded-full flex items-center justify-center font-bold cursor-pointer relative"
-              >
-                {initial}
-                {notification.some((n) => !n.read) && (
-                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+          {/* Avatar/Initial + Notifications */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setOpen((p) => !p);
+                if (!open && notification.some((n) => !n.read)) {
+                  markAsRead();
+                }
+              }}
+              className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-white/80 bg-white text-[#254085] flex items-center justify-center font-bold"
+              title="Notifications"
+              aria-haspopup="true"
+              aria-expanded={open ? "true" : "false"}
+            >
+              {avatarUrl && !avatarError ? (
+                <img
+                  src={avatarUrl}
+                  alt="avatar"
+                  className="w-full h-full object-cover"
+                  onError={() => setAvatarError(true)} // fallback to initial if image broken
+                />
+              ) : (
+                <span>{initial}</span>
+              )}
+
+              {notification.some((n) => !n.read) && (
+                <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-1 border-white"></span>
+              )}
+            </button>
+
+            {open && (
+              <div className="absolute right-0 mt-2 w-64 bg-white shadow-lg rounded-lg text-[#254085] z-50">
+                {notification.length > 0 ? (
+                  notification.map((n, i) => (
+                    <div key={i} className="px-4 py-2 border-b last:border-0">
+                      {n.text}
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-4 py-2">No new notifications</div>
                 )}
               </div>
+            )}
+          </div>
 
-              {open && (
-                <div className="absolute right-0 mt-2 w-64 bg-white shadow-lg rounded-lg text-[#254085] z-50">
-                  {notification.length > 0 ? (
-                    notification.map((n, i) => (
-                      <div key={i} className="px-4 py-2 border-b last:border-0">
-                        {n.text}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-4 py-2">No new notifications</div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="w-8 h-8 bg-white text-[#254085] rounded-full flex items-center justify-center font-bold">
-              {initial}
-            </div>
-          )}
+          {/* Edit icon — ALWAYS visible when logged in (change route if needed) */}
+          <button
+            onClick={() => navigate("/edit")}
+            className="p-2 rounded-full border border-white/70 text-white hover:bg-white hover:text-[#254085] transition"
+            title="Edit your profile"
+            aria-label="Edit your profile"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15.232 5.232l3.536 3.536M4 20h4.586a1 1 0 00.707-.293l9.9-9.9a2 2 0 00-2.828-2.828l-9.9 9.9A1 1 0 006.586 18H4v2z"
+              />
+            </svg>
+          </button>
+
+          {/* Logout */}
           <button
             onClick={handleLogout}
             className="px-4 py-2 text-sm font-medium rounded-lg border border-white text-white hover:bg-white hover:text-[#254085] transition"
           >
-            ➜]
+            Logout
           </button>
         </div>
       ) : (
