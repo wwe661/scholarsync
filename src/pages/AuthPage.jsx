@@ -196,13 +196,7 @@ const AuthPage = () => {
 
           {msg && <p className="text-center text-red-600 mt-3">{msg}</p>}
 
-          <div className="text-center mt-6">
-            <p className="text-sm text-gray-500">Or login with</p>
-            <div className="flex justify-center gap-3 mt-4">
-              <button className="px-6 py-2 bg-[#1877F2] text-white rounded-lg">Facebook</button>
-              <button className="px-6 py-2 bg-[#4285F4] text-white rounded-lg">Google</button>
-            </div>
-          </div>
+          
 
           <p className="text-center text-sm text-blue-600 mt-6 cursor-pointer">
             {isLogin ? "Not a member?" : "Already have an account?"}{" "}
