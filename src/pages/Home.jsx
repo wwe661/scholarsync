@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo,useState } from 'react';
 import { FaFlask, FaCog, FaLaptopCode, FaAtom, FaEnvelope, FaPhoneAlt } from 'react-icons/fa';
 import { Heart, ArrowRight, ArrowLeft } from 'lucide-react';
-
+import { useNavigate } from "react-router-dom";
+import { Link } from 'react-router-dom';
 import matchImg from '/match.jpg';
 import searchImg from '/search.jpg';
 import analyzeImg from '/analyze.jpg';
@@ -18,6 +19,7 @@ const Home = () => {
 const [items, setItems] = useState([]);
 const [err, setErr] = useState("");
 const [uniitems, unisetItems] = useState([]);
+  const navigate = useNavigate();
 useEffect(() => {
     const run = async () => {
       try {
@@ -266,7 +268,7 @@ useEffect(() => {
     </div>
 <div className="bg-white py-10 px-6">
   <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">
-    Top International Students Universities
+    The 10 Most Internationally Inclusive Universities
   </h2>
 
   {err && <div className="text-center text-red-600 mb-6">{err}</div>}
@@ -282,85 +284,94 @@ useEffect(() => {
     "
   >
     <div className="flex gap-4 pr-4">
-      {uniitems.map((u) => (
-        <div
-          key={u.id}
-          className="
-            snap-start
-            bg-white rounded-lg shadow-lg overflow-hidden text-center
-            w-[260px] min-w-[260px] shrink-0
-          "
-        >
-         <div className="flex items-center justify-center w-full h-40 bg-white">
-  <img
-    src={u.image || "/placeholder.jpg"}
-    alt={u.name || "University"}
-    className="max-h-full max-w-full object-contain"
-  />
+  {uniitems.map((u) => (
+    <div
+      key={u.id}
+      className="
+        snap-start
+        bg-white rounded-lg shadow-lg overflow-hidden text-center
+        w-[260px] min-w-[260px] shrink-0
+      "
+    >
+      {/* Wrap the whole card content inside an anchor tag */}
+       <a
+                  href={u.url || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 w-full bg-white text-[#254085]  text-sm font-medium py-2 rounded-md hover:bg-[#254085] hover:text-white hover:border border-white transition text-center"
+                >
+        <div className="flex items-center justify-center w-full h-40 bg-white">
+          <img
+            src={u.image || "/placeholder.jpg"}
+            alt={u.name || "University"}
+            className="max-h-full max-w-full object-contain"
+          />
+        </div>
+
+        <div className="bg-[#254085] text-white p-4 h-full">
+          <h3 className="text-lg font-semibold">{u.name || 'University name'}</h3>
+          <p className="text-sm opacity-80">
+            Acceptance rate: {u.international || '-'}
+          </p>
+        </div>
+     </a>
+    </div>
+    
+  ))}
 </div>
 
-          <div className="bg-[#254085] text-white p-4 h-full">
-            <h3 className="text-lg font-semibold">
-              {u.name || 'University name'}
-            </h3>
-            <p className="text-sm opacity-80">
-              Acceptance rate: {u.international || '-'}
-            </p>
-          </div>
-        </div>
-      ))}
-
-      {/* Simple skeletons if empty and no error */}
-      {uniitems.length === 0 && !err && (
-        <>
-          {[...Array(4)].map((_, i) => (
-            <div
-              key={i}
-              className="
-                snap-start bg-[#254085]/10 rounded-lg overflow-hidden
-                w-[260px] min-w-[260px] h-[320px] animate-pulse shrink-0
-              "
-            />
-          ))}
-        </>
-      )}
-    </div>
   </div>
 </div>
 
 
       {/* Three Image Boxes */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-10 ">
-        {[{ img: matchImg, text: 'Go to Matching Page' },
-          { img: searchImg, text: 'Go to Searching Page' },
-          { img: analyzeImg, text: 'Go to Analysis Page' }].map(({ img, text }) => (
-          <div key={text} className="cursor-pointer rounded shadow-md overflow-hidden hover:shadow-lg">
-            <img src={img} alt={text} className="w-full h-40 lg:h-64 xl:h-72 object-cover" />
-            <div className="p-4 font-medium text-center bg-white">{text}</div>
-          </div>
-        ))}
+       
+<div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-10">
+  {[{ img: matchImg, text: 'Go to Matching Page', to: '/match-scholar' },
+    { img: searchImg, text: 'Go to Searching Page', to: '/search' },
+    { img: analyzeImg, text: 'Go to Analysis Page', to: '/analysis/scholarships' }].map(({ img, text, to }) => (
+    <Link key={text} to={to} className="cursor-pointer rounded shadow-md overflow-hidden hover:shadow-lg">
+      <div className="w-full h-40 lg:h-64 xl:h-72">
+        <img src={img} alt={text} className="w-full h-full object-cover" />
       </div>
+      <div className="p-4 font-medium text-center bg-white">{text}</div>
+    </Link>
+  ))}
+</div>
 
-      {/* FAQ Section */}
-      <section className="py-12 ">
-        <div className="container mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-6">Frequently Asked Questions</h2>
-          <div className="space-y-4">
-            {["How do I apply for scholarships?", "Is it really free?", "Can international students apply?"]
-              .map((question, index) => (
-                <details key={index} className="bg-white p-4 rounded-lg shadow">
-                  <summary className="cursor-pointer font-semibold text-[#254085] flex items-center justify-between">
-                    {question}
-                    <span className="text-lg">▼</span>
-                  </summary>
-                  <p className="mt-2 text-sm text-gray-700">
-                    This is the answer to: {question}
-                  </p>
-                </details>
-              ))}
-          </div>
-        </div>
-      </section>
+
+     {/* FAQ Section */}
+<section className="py-12">
+  <div className="container mx-auto">
+    <h2 className="text-3xl font-bold text-center mb-6">Frequently Asked Questions</h2>
+    <div className="space-y-4">
+      {[
+        "How can I apply for scholarships?",
+        "What types of scholarships are available?",
+        "Is it really free to apply for scholarships?",
+        "What are the eligibility requirements for scholarships?",
+        "Can international students apply for scholarships?",
+        "How do I find the best university for my program?"
+      ].map((question, index) => (
+        <details key={index} className="bg-white p-4 rounded-lg shadow">
+          <summary className="cursor-pointer font-semibold text-[#254085] flex items-center justify-between">
+            {question}
+            <span className="text-lg">▼</span>
+          </summary>
+          <p className="mt-2 text-sm text-gray-700">
+            {index === 0 && "To apply for scholarships, you need to complete an online application form, provide necessary documents, and submit them through the scholarship provider’s website."}
+            {index === 1 && "Scholarships vary by type, including merit-based, need-based, subject-specific, and country-specific scholarships."}
+            {index === 2 && "No, most scholarship applications are free of charge. However, some may require a small processing fee, but this is rare."}
+            {index === 3 && "Eligibility varies depending on the scholarship type, but common requirements include academic performance, financial need, and sometimes specific courses or majors."}
+            {index === 4 && "Yes, many scholarships are available for international students. Check the scholarship’s eligibility criteria to confirm if you qualify."}
+            {index === 5 && "To find the best university for your program, research academic rankings, faculty expertise, campus facilities, and course offerings. You can also use our university comparison tool for more details."}
+          </p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
+
 
       {/* Footer */}
      <footer className="bg-[#254085] text-white text-sm p-6 text-center space-y-2">

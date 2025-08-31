@@ -839,6 +839,7 @@ def top_universities_by_international(limit: int = 10):
             "UniversityName": 1,
             "InternationalStudents": 1,
             "ImageUrl": 1,
+            "Website": 1,
         },
     )
 
@@ -856,6 +857,7 @@ def top_universities_by_international(limit: int = 10):
             "international": intl_raw,                              # keep original string e.g. "42%"
             "international_num": _pct_to_float(intl_raw),           # numeric for sorting
             "image": img,
+             "url": d.get("Website"),
         })
 
     # Sort by numeric percentage desc
