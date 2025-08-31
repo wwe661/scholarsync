@@ -7,6 +7,8 @@ import {
 } from "react-router-dom";
 //import { BrowserRouter as Router, Routes, Route, useLocation} from 'react-router-dom';
 import Navbar from "./components/navbar";
+import AdminDashboard from "./pages/Admin";
+import AdminProfile from "./pages/AdminProfile";
 import Search from "./pages/searchScholar";
 import MatchScholar from "./pages/matchScholar";
 import DataForm from "./pages/dataform";
@@ -24,7 +26,7 @@ import UniAnalysis from "./pages/uni_analysis";
 
 function AppContent() {
   const location = useLocation();
-  const hideNavbar = location.pathname === "/authpage";
+  const hideNavbar = /^\/(authpage|admin)(\/|$)/.test(location.pathname);
 
   return (
     <>
@@ -44,6 +46,8 @@ function AppContent() {
           <Route path="/cost-prediction" element={<CostPredict />} />
           <Route path="/analysis/scholarships" element={<ScholarAnalysis />} />
           <Route path="/uni-analysis" element={<UniAnalysis />} />
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/profile" element={<AdminProfile />} />
 
           <Route
             path="/analysis"

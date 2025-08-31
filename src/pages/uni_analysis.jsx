@@ -40,6 +40,7 @@ const COUNTRIES_API = `${API_BASE}/uni-analysis/countries`;
 
 // add this for the tuition chart
 const EXP_TUITION_API = `${API_BASE}/uni-analysis/expensive-tuition`;
+const UNIS_TOTAL_API = `${API_BASE}/uni-analysis/university-count`;
 
 export default function UniAnalysis() {
   const [rows, setRows] = useState(null); // null = loading
@@ -854,14 +855,20 @@ function RankVsTuitionScatter({ maxRank = 120 }) {
 }
 
 function TopSubjectsDonut({ limit = 10 }) {
+  // existing state for the donut
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
-  const [active, setActive] = useState(-1); // hover/keyboard focus
-  const [pinned, setPinned] = useState(-1); // click to pin
-  const [showPct, setShowPct] = useState(true); // % vs count
-  const [sortMode, setSortMode] = useState("pct"); // "pct" | "alpha"
+  const [active, setActive] = useState(-1);
+  const [pinned, setPinned] = useState(-1);
+  const [showPct, setShowPct] = useState(true);
+  const [sortMode, setSortMode] = useState("pct");
 
+  // NEW: real total from DB
+  const [uniTotal, setUniTotal] = useState(null);
+
+  // fetch data for the donut (unchanged)
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
@@ -869,16 +876,40 @@ function TopSubjectsDonut({ limit = 10 }) {
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        setRows(Array.isArray(json) ? json : []);
+        if (!cancelled) setRows(Array.isArray(json) ? json : []);
       } catch (e) {
-        console.error(e);
-        setRows([]);
-        setError("Couldn’t load subjects.");
+        console.error("top-subjects fetch failed:", e);
+        if (!cancelled) {
+          setRows([]);
+          setError("Couldn’t load subjects.");
+        }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [limit]);
 
-  const total = useMemo(
+  // NEW: fetch the actual count of documents in University collection
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(UNIS_TOTAL_API);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const { total } = await r.json();
+        if (!cancelled) setUniTotal(Number(total) || 0);
+      } catch {
+        if (!cancelled) setUniTotal(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // for donut percentages only (rename to avoid confusion)
+  const subjectTotal = useMemo(
     () =>
       Array.isArray(rows) ? rows.reduce((s, r) => s + (r.count || 0), 0) : 0,
     [rows]
@@ -902,10 +933,10 @@ function TopSubjectsDonut({ limit = 10 }) {
           "#eab308",
           "#9ca3af",
         ][i % 10],
-      share: total ? Math.round((r.count / total) * 100) : 0,
+      share: subjectTotal ? Math.round((r.count / subjectTotal) * 100) : 0,
       idx: i,
     }));
-  }, [rows, total]);
+  }, [rows, subjectTotal]);
 
   const data = useMemo(() => {
     const arr = [...base];
@@ -1089,7 +1120,7 @@ function TopSubjectsDonut({ limit = 10 }) {
       )}
 
       <div className="text-center mt-4 text-sm text-slate-600">
-        Total Universities: {total.toLocaleString()}
+        Total Universities: {uniTotal == null ? "—" : uniTotal.toLocaleString()}
       </div>
     </section>
   );

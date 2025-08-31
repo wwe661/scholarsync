@@ -280,9 +280,7 @@ function TopCountriesBar({ data }) {
   return (
     <Card
       title="Top Scholarship Provider Countries"
-      right={
-        <span className="text-xs text-slate-400">scholarships • share %</span>
-      }
+      right={<span className="text-xs text-slate-400">scholarships • %</span>}
     >
       <div className="h-[340px]">
         <ResponsiveContainer width="100%" height="100%">

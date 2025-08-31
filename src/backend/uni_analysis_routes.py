@@ -352,4 +352,15 @@ def top_subjects(n: int = 10, db: Database = Depends(get_db)):
         out.append({"subject": name, "count": r["count"]})
 
     return out
+@router.get("/university-count")
+def university_count(approx: bool = False, db: Database = Depends(get_db)):
+    """
+    Return the total number of documents in the University collection.
+    - Set ?approx=true to use MongoDB's fast estimate (may be off by a little).
+    """
+    coll = db["University"]
+    total = (
+        coll.estimated_document_count() if approx else coll.count_documents({})
+    )
+    return {"total": int(total), "approx": bool(approx)}
 

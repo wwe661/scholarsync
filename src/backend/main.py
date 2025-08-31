@@ -1,4 +1,5 @@
 # --- imports ---
+from bson.errors import InvalidId
 from fastapi_utils.tasks import repeat_every
 from bson.objectid import ObjectId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -27,18 +28,17 @@ class UniPrefsIn(BaseModel):
     uniPreferredSubjectIds: List[str] = []
     uniPreferredCountries: List[str] = []
 
-
+from passlib.hash import bcrypt   
 
 from matchuni import router as matchuni_router
 from analysis_routes import router as analysis_router
 from uni_analysis_routes import router as uni_analysis_router
 
-
+from admin_profile import router as admin_profile_router
 
 
 
 # after you create `app = FastAPI()`:
-
 
 
 
@@ -112,7 +112,7 @@ app.include_router(matchuni_router)
 app.include_router(analysis_router, tags=["analysis"])
 # after app = FastAPI(...)
 app.include_router(uni_analysis_router)        # ✅ no extra prefix here
-
+app.include_router(admin_profile_router)
 
 # --- CORS ---
 # app.add_middleware(
@@ -122,7 +122,26 @@ app.include_router(uni_analysis_router)        # ✅ no extra prefix here
 #     allow_methods=["*"],
 #     allow_headers=["*"],
 # )
+# core collections
+col = db["scholarships"]
+notifications = db["notifications"]
+fields_col = db["fields"]
+universities_col = db["University"]
+users_col = db["users"]
 
+# aliases for admin compatibility
+unis_col = universities_col
+unisubjects_col = db["Unisubjects"]
+
+# detect costs collection robustly
+COST_CANDIDATES = ["cost", "Cost", "costs", "Costs"]
+_cost_col_name = None
+for _name in COST_CANDIDATES:
+    if _name in db.list_collection_names():
+        _cost_col_name = _name
+        break
+costs_col = db[_cost_col_name or "cost"]  # fallback to "cost"
+cost_col = costs_col  # alias for admin routes
 # --- helpers ---
 def parse_deadline(s: str):
     try:
@@ -582,15 +601,26 @@ def signup(user: UserIn):
 
 @app.post("/login")
 def login(user: UserIn):
-    # Check if the email and password match the admin credentials
-    if user.email == "admin@gmail.com" and user.password == "Admin@123":
-        return {
-            "ok": True,
-            "msg": "Login successful",
-            "email": user.email,
-            "user_id": "admin",  # Mark this as an admin user
-            "is_admin": True  # Add this flag to identify admin
-        }
+    u = users_col.find_one({"email": user.email})
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    stored = (u.get("password") or "")
+    if stored.startswith("$2b$"):              # bcrypt hash stored
+        ok = bcrypt.verify(user.password, stored)
+    else:                                      # legacy plaintext
+        ok = (user.password == stored)
+
+    if not ok:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    return {
+        "ok": True,
+        "msg": "Login successful",
+        "email": u["email"],
+        "user_id": str(u["_id"]),
+        "is_admin": bool(u.get("role") == "admin"),
+    }
 
     # Normal login logic for other users
     found = users_col.find_one({"email": user.email})
@@ -988,5 +1018,374 @@ def send_email(to_email, subject, body):
     print(f"Email sent to {to_email}")
     # Plug in SMTP or SendGrid here
     print(f"Sending email -> {to_email}: {subject} - {body}")
+
+# --- Admin routes ---
+# USERS
+@app.get("/admin/users")
+def admin_get_users():
+    users = list(users_col.find({}, {"_id": 1, "email": 1, "created_at": 1, "updatedAt": 1}))
+    for u in users:
+        u["_id"] = str(u["_id"])
+        # Convert datetime to ISO string for frontend
+        u["created_at"] = u.get("created_at").isoformat() if u.get("created_at") else None
+        u["updatedAt"] = u.get("updatedAt").isoformat() if u.get("updatedAt") else None
+    return {"items": users, "total": len(users)}
+
+
+
+
+
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(user_id: str):
+    try:
+        oid = ObjectId(user_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid user ID: {user_id}")
+    result = users_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, "msg": "User deleted"}
+
+
+# SCHOLARSHIPS
+# --- SCHOLARSHIPS ---
+@app.get("/admin/scholarships/{scholar_id}")
+def get_scholarship(scholar_id: str):
+    try:
+        oid = ObjectId(scholar_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid scholarship ID")
+   
+    scholarship = col.find_one({"_id": oid})
+    if not scholarship:
+        raise HTTPException(status_code=404, detail="Scholarship not found")
+   
+    # convert _id to string for frontend
+    scholarship["_id"] = str(scholarship["_id"])
+    return {"ok": True, "item": scholarship}
+
+
+# --- Admin Scholarships List ---
+@app.get("/admin/scholarships")
+def admin_get_scholarships():
+    scholarships = list(col.find({}))  # <-- no projection
+    for s in scholarships:
+        s["_id"] = str(s["_id"])
+    return {"items": scholarships, "total": len(scholarships)}
+
+
+
+
+@app.put("/admin/scholarships/{scholar_id}")
+def update_scholarship(scholar_id: str, data: dict = Body(...)):
+    try:
+        oid = ObjectId(scholar_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid scholarship ID")
+
+
+    update_data = {k: v for k, v in data.items() if k not in ["_id", "id"]}
+    result = col.update_one({"_id": oid}, {"$set": update_data})
+
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Scholarship not found")
+
+
+    # Return updated document
+    updated = col.find_one({"_id": oid})
+    updated["_id"] = str(updated["_id"])
+    return {"ok": True, "msg": "Scholarship updated", "item": updated}
+
+
+@app.delete("/admin/scholarships/{scholar_id}")
+def delete_scholarship(scholar_id: str):
+    try:
+        oid = ObjectId(scholar_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid scholarship ID: {scholar_id}")
+    result = col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Scholarship not found")
+    return {"ok": True, "msg": "Scholarship deleted"}
+
+
+
+
+# --- ADD SCHOLARSHIP ---
+@app.post("/admin/scholarships")
+def add_scholarship(data: dict = Body(...)):
+    # Remove _id if frontend accidentally sends one
+    data.pop("_id", None)
+
+
+    # Insert into MongoDB
+    result = col.insert_one(data)
+
+
+    # Fetch inserted document
+    new_doc = col.find_one({"_id": result.inserted_id})
+    new_doc["_id"] = str(new_doc["_id"])
+
+
+    return new_doc
+
+
+
+
+# UNIVERSITIES
+@app.get("/admin/universities/{uni_id}")
+def get_university(uni_id: str):
+    try:
+        oid = ObjectId(uni_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid university ID")
+   
+    uni = unis_col.find_one({"_id": oid})
+    if not uni:
+        raise HTTPException(status_code=404, detail="University not found")
+
+
+    # Convert ObjectId to string
+    uni["_id"] = str(uni["_id"])
+    return {"ok": True, "item": uni}
+# --- Admin Universities List ---
+@app.get("/admin/universities")
+def admin_get_universities():
+    unis = list(unis_col.find({}))  # no projection
+    for u in unis:
+        u["_id"] = str(u["_id"])
+    return {"items": unis, "total": len(unis)}
+
+
+
+
+@app.put("/admin/universities/{uni_id}")
+def update_university(uni_id: str, data: dict = Body(...)):
+    try:
+        oid = ObjectId(uni_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid university ID")
+
+
+    update_data = {k: v for k, v in data.items() if k not in ["_id", "id"]}
+    result = unis_col.update_one({"_id": oid}, {"$set": update_data})
+
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="University not found")
+
+
+    updated = unis_col.find_one({"_id": oid})
+    updated["_id"] = str(updated["_id"])
+    return {"ok": True, "msg": "University updated", "item": updated}
+@app.delete("/admin/universities/{uni_id}")
+def delete_university(uni_id: str):
+    try:
+        oid = ObjectId(uni_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid university ID: {uni_id}")
+    result = unis_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="University not found")
+    return {"ok": True, "msg": "University deleted"}
+
+
+# --- ADD UNIVERSITY ---
+@app.post("/admin/universities")
+def add_university(data: dict = Body(...)):
+    data.pop("_id", None)
+
+
+    result = unis_col.insert_one(data)
+
+
+    new_doc = unis_col.find_one({"_id": result.inserted_id})
+    new_doc["_id"] = str(new_doc["_id"])
+
+
+    return new_doc
+
+
+
+
+# --- Admin Fields ---
+@app.get("/admin/fields")
+def admin_get_fields():
+    fields = list(fields_col.find({}))
+    for f in fields:
+        f["_id"] = str(f["_id"])
+    return {"items": fields, "total": len(fields)}
+
+
+@app.get("/admin/fields/{field_id}")
+def get_field(field_id: str):
+    try:
+        oid = ObjectId(field_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid field ID")
+    field = fields_col.find_one({"_id": oid})
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    field["_id"] = str(field["_id"])
+    return {"ok": True, "item": field}
+
+
+@app.post("/admin/fields")
+def add_field(data: dict = Body(...)):
+    data.pop("_id", None)
+    result = fields_col.insert_one(data)
+    new_doc = fields_col.find_one({"_id": result.inserted_id})
+    new_doc["_id"] = str(new_doc["_id"])
+    return new_doc
+
+
+@app.put("/admin/fields/{field_id}")
+def update_field(field_id: str, data: dict = Body(...)):
+    try:
+        oid = ObjectId(field_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid field ID")
+    update_data = {k: v for k, v in data.items() if k != "_id"}
+    result = fields_col.update_one({"_id": oid}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Field not found")
+    updated = fields_col.find_one({"_id": oid})
+    updated["_id"] = str(updated["_id"])
+    return {"ok": True, "msg": "Field updated", "item": updated}
+
+
+@app.delete("/admin/fields/{field_id}")
+def delete_field(field_id: str):
+    try:
+        oid = ObjectId(field_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid field ID: {field_id}")
+    result = fields_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Field not found")
+    return {"ok": True, "msg": "Field deleted"}
+
+
+# --- Admin UniSubjects ---
+@app.get("/admin/unisubjects")
+def admin_get_unisubjects():
+    subs = list(unisubjects_col.find({}))
+    for s in subs:
+        s["_id"] = str(s["_id"])
+    return {"items": subs, "total": len(subs)}
+
+
+@app.get("/admin/unisubjects/{sub_id}")
+def get_unisubject(sub_id: str):
+    try:
+        oid = ObjectId(sub_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid subject ID")
+    sub = unisubjects_col.find_one({"_id": oid})
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    sub["_id"] = str(sub["_id"])
+    return {"ok": True, "item": sub}
+
+
+@app.post("/admin/unisubjects")
+def add_unisubject(data: dict = Body(...)):
+    data.pop("_id", None)
+    result = unisubjects_col.insert_one(data)
+    new_doc = unisubjects_col.find_one({"_id": result.inserted_id})
+    new_doc["_id"] = str(new_doc["_id"])
+    return new_doc
+
+
+@app.put("/admin/unisubjects/{sub_id}")
+def update_unisubject(sub_id: str, data: dict = Body(...)):
+    try:
+        oid = ObjectId(sub_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid subject ID")
+    update_data = {k: v for k, v in data.items() if k != "_id"}
+    result = unisubjects_col.update_one({"_id": oid}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    updated = unisubjects_col.find_one({"_id": oid})
+    updated["_id"] = str(updated["_id"])
+    return {"ok": True, "msg": "Subject updated", "item": updated}
+
+
+@app.delete("/admin/unisubjects/{sub_id}")
+def delete_unisubject(sub_id: str):
+    try:
+        oid = ObjectId(sub_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid subject ID: {sub_id}")
+    result = unisubjects_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    return {"ok": True, "msg": "Subject deleted"}
+
+
+
+
+# --- Admin Cost ---
+# --- Admin Cost ---
+
+
+@app.get("/admin/cost")
+def admin_get_costs():
+    costs = list(cost_col.find({}))
+    for c in costs:
+        c["_id"] = str(c["_id"])
+    return {"items": costs, "total": len(costs)}
+
+
+@app.get("/admin/cost/{cost_id}")
+def get_cost(cost_id: str):
+    try:
+        oid = ObjectId(cost_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid cost ID")
+    cost = cost_col.find_one({"_id": oid})
+    if not cost:
+        raise HTTPException(status_code=404, detail="Cost not found")
+    cost["_id"] = str(cost["_id"])
+    return {"ok": True, "item": cost}
+
+
+@app.post("/admin/cost")
+def add_cost(data: dict = Body(...)):
+    data.pop("_id", None)
+    result = cost_col.insert_one(data)
+    new_doc = cost_col.find_one({"_id": result.inserted_id})
+    new_doc["_id"] = str(new_doc["_id"])
+    return new_doc
+
+
+@app.put("/admin/cost/{cost_id}")
+def update_cost(cost_id: str, data: dict = Body(...)):
+    try:
+        oid = ObjectId(cost_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid cost ID")
+    update_data = {k: v for k, v in data.items() if k != "_id"}
+    result = cost_col.update_one({"_id": oid}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cost not found")
+    updated = cost_col.find_one({"_id": oid})
+    updated["_id"] = str(updated["_id"])
+    return {"ok": True, "msg": "Cost updated", "item": updated}
+
+
+@app.delete("/admin/cost/{cost_id}")
+def delete_cost(cost_id: str):
+    try:
+        oid = ObjectId(cost_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid cost ID: {cost_id}")
+    result = cost_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Cost not found")
+    return {"ok": True, "msg": "Cost deleted"}
 
 
