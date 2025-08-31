@@ -22,28 +22,21 @@ from match import router as match_router
 from pydantic import  EmailStr
 # in main.py
 from pydantic import BaseModel, EmailStr
+
+# 🔹 Added for profile/avatar
+from fastapi import UploadFile, File, Body
+from fastapi.staticfiles import StaticFiles
+
 class UniPrefsIn(BaseModel):
     email: EmailStr
     uniPreferredSubjectIds: List[str] = []
     uniPreferredCountries: List[str] = []
 
-
-
 from matchuni import router as matchuni_router
 from analysis_routes import router as analysis_router
 from uni_analysis_routes import router as uni_analysis_router
 
-
-
-
-
 # after you create `app = FastAPI()`:
-
-
-
-
-
-
 
 # --- .env loading (robust) ---
 CANDIDATES = [
@@ -107,12 +100,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 🔹 Static files for avatar uploads (added)
+BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "static"
+AVATAR_DIR = ASSETS_DIR / "avatars"
+AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(ASSETS_DIR)), name="static")
+
 app.include_router(match_router)
 app.include_router(matchuni_router)
 app.include_router(analysis_router, tags=["analysis"])
 # after app = FastAPI(...)
 app.include_router(uni_analysis_router)        # ✅ no extra prefix here
-
 
 # --- CORS ---
 # app.add_middleware(
@@ -135,6 +134,7 @@ def format_deadline_with_month(date_obj: datetime) -> str:
     Convert datetime object -> string in dd/Mon/yy format
     Example: 2025-05-15 -> "15/May/25"
     """
+    # NOTE: we use `import datetime` later; this guard stays as-is.
     if isinstance(date_obj, datetime.datetime):
         return date_obj.strftime("%d/%b/%y")
     else: 
@@ -187,31 +187,6 @@ def _fields_ids_to_names(raw) -> list[str]:
             names.append(name)
     return names
 
-# def to_public(d: dict):
-#     amount = clean_amount(d.get("amount", ""))
-#     if not amount:
-#         amount = "Fully Funded"
-
-#     # map stored field IDs -> field names
-#     field_names = _fields_ids_to_names(d.get("fields"))
-
-#     return {
-#         "id": str(d.get("_id")),
-#         "scholarship_name": d.get("scholarship_name"),
-#         "provider": d.get("provider"),
-#         "country": d.get("country"),
-#         "fields": field_names,  # <-- now a list of readable names
-#         "level": d.get("level"),
-#         "min_gpa": d.get("min_gpa"),
-#         "deadline": d.get("deadline"),
-#         "deadlineDate": format_deadline_with_month(d.get("deadline", "")),
-#         "amount": amount,
-#         "type": d.get("type"),
-#         "eligibility": d.get("eligibility"),
-#         "Egender": d.get("Egender"),
-#         "Ecountry": d.get("Ecountry"),
-#         "link": d.get("link"),
-#     }
 def to_public(d: dict):
     amount = clean_amount(d.get("amount", "")) or "Fully Funded"
     field_names = _fields_ids_to_names(d.get("fields"))
@@ -280,6 +255,12 @@ def _uni_to_public(d: dict) -> Dict[str, Any]:
         "url": d.get("Website"),
     }
 
+# 🔹 helper for id parsing (added)
+def _oid(s: str) -> ObjectId:
+    try:
+        return ObjectId(s)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user id")
 
 # --- sanity routes ---
 @app.get("/")
@@ -368,7 +349,6 @@ def scholarships_search(
     if debug:
         payload["debug"] = {"query": str(query), "matched": total}
     return payload
-
 
 fields_col = db["fields"]
 
@@ -534,6 +514,127 @@ def cost_by_university(name: str, limit: int = 10):
 
 users_col = db["users"]
 
+# 🔹 Profile models & endpoints (added)
+class UserProfileIn(BaseModel):
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    email: Optional[EmailStr] = None
+    profilePic: Optional[str] = None
+    password: Optional[str] = None  # demo only
+
+@app.get("/users/{user_id}")
+def get_user(user_id: str):
+    if user_id == "admin":
+        raise HTTPException(status_code=404, detail="Admin profile not editable")
+    doc = users_col.find_one({"_id": _oid(user_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": str(doc["_id"]),
+        "firstName": doc.get("firstName") or doc.get("username") or "",
+        "lastName": doc.get("lastName") or "",
+        "email": doc.get("email") or "",
+        "profilePic": doc.get("profilePic") or "",
+        "password": doc.get("password") or "",  # WARNING: demo only
+    }
+
+@app.get("/users/by-email")
+def get_user_by_email(email: EmailStr):
+    doc = users_col.find_one({"email": str(email)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": str(doc["_id"]),
+        "firstName": doc.get("firstName") or doc.get("username") or "",
+        "lastName": doc.get("lastName") or "",
+        "email": doc.get("email") or "",
+        "profilePic": doc.get("profilePic") or "",
+    }
+
+@app.put("/users/{user_id}")
+def update_user(user_id: str, payload: UserProfileIn):
+    if user_id == "admin":
+        raise HTTPException(status_code=400, detail="Admin profile not editable")
+    oid = _oid(user_id)
+    doc = users_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updates: Dict[str, Any] = {}
+
+    # Email change → enforce uniqueness
+    if payload.email and payload.email != doc.get("email"):
+        if users_col.find_one({"email": payload.email, "_id": {"$ne": oid}}):
+            raise HTTPException(status_code=400, detail="Email already exists")
+        updates["email"] = str(payload.email)
+
+    if payload.firstName is not None: updates["firstName"] = payload.firstName
+    if payload.lastName  is not None: updates["lastName"]  = payload.lastName
+    if payload.profilePic is not None: updates["profilePic"] = payload.profilePic
+    if payload.password: updates["password"] = payload.password  # demo only
+
+    if updates:
+        updates["updated_at"] = datetime.datetime.utcnow()
+        users_col.update_one({"_id": oid}, {"$set": updates})
+
+    new_doc = users_col.find_one({"_id": oid})
+    return {
+        "ok": True,
+        "user": {
+            "id": user_id,
+            "firstName": new_doc.get("firstName") or "",
+            "lastName": new_doc.get("lastName") or "",
+            "email": new_doc.get("email") or "",
+            "profilePic": new_doc.get("profilePic") or "",
+        }
+    }
+
+class PasswordChangeIn(BaseModel):
+    currentPassword: str
+    newPassword: str
+
+@app.put("/users/{user_id}/password")
+def change_password(user_id: str, body: PasswordChangeIn):
+    if user_id == "admin":
+        raise HTTPException(status_code=400, detail="Admin profile not editable")
+    oid = _oid(user_id)
+    doc = users_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    if (doc.get("password") or "") != body.currentPassword:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    users_col.update_one({"_id": oid}, {"$set": {"password": body.newPassword, "updated_at": datetime.datetime.utcnow()}})
+    return {"ok": True, "msg": "Password updated"}
+
+@app.post("/upload/avatar")
+async def upload_avatar(request: Request, file: UploadFile = File(...)):
+    ct = (file.content_type or "").lower()
+    if not ct.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    data = await file.read()
+    max_bytes = 5 * 1024 * 1024  # 5 MB
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=400, detail="Image too large (max 5 MB)")
+
+    ext = {
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/png": "png",
+        "image/gif": "gif",
+        "image/webp": "webp",
+        "image/svg+xml": "svg",
+    }.get(ct, "bin")
+
+    filename = f"{ObjectId()}.{ext}"
+    filepath = AVATAR_DIR / filename
+    with open(filepath, "wb") as f:
+        f.write(data)
+
+    base = str(request.base_url).rstrip("/")
+    url = f"{base}/static/avatars/{filename}"
+    return {"url": url}
+
 class UserIn(BaseModel):
     username: str = "wild"
     email: EmailStr
@@ -550,51 +651,64 @@ def check_email(user: UserIn):
 
 @app.post("/signup")
 def signup(user: UserIn):
-    # Check if email already exists before creating a new user
+    # Block duplicate emails
     if users_col.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email already exists")
 
-    # Continue with the rest of the signup process
     today = datetime.datetime.utcnow()
 
-    result = users_col.insert_one({
+    # Create user with empty profilePic => navbar falls back to initial letter
+    doc = {
         "email": user.email,
-        "password": user.password,  # (hash in real apps)
+        "password": user.password,   # (hash in real apps)
         "created_at": today,
-        "prefs": {}
-    })
+        "prefs": {},
+        "firstName": "",
+        "lastName": "",
+        "profilePic": ""             # <-- important for initial-letter avatar
+    }
+    result = users_col.insert_one(doc)
+
     name = user.email.split("@")[0]
-    # Create welcome notification
+
+    # Notification
     create_notification(
         mail=user.email,
         type="welcome",
         text=f"Welcome, {name}! Your account has been created successfully."
     )
+
+    # Welcome email (HTML)
     welcome_html = """
     <html>
     <body style="font-family: Arial; background:#f4f4f4; padding:20px;">
         <div style="max-width:600px;margin:auto;background:white;padding:20px;border-radius:8px;">
         <h2 style="color:#254085;">🎉 Welcome to Our System!</h2>
-        <p>Hi <b>"""+ name +"""</b>,</p>
+        <p>Hi <b>""" + name + """</b>,</p>
         <p>We’re excited to have you onboard 🚀</p>
-        <a href="https://localhost:5173" 
-            style="display:inline-block;background:#254085;color:white;padding:12px 20px;
-                    text-decoration:none;border-radius:5px;margin-top:20px;">
-            Get Started
+        <a href="https://localhost:5173"
+           style="display:inline-block;background:#254085;color:white;padding:12px 20px;
+                  text-decoration:none;border-radius:5px;margin-top:20px;">
+           Get Started
         </a>
         <p style="margin-top:30px;">Cheers,<br> ScholarSync Team </p>
         </div>
     </body>
     </html>
     """
-    # Send welcome email
     send_email(
         user.email,
         "Welcome to ScholarApp!",
         welcome_html
     )
-    
-    return {"ok": True, "msg": "Signup successful", "email": user.email}
+
+    # ✅ Return user_id so frontend can persist it (fixes redirect to /authpage)
+    return {
+        "ok": True,
+        "msg": "Signup successful",
+        "email": user.email,
+        "user_id": str(result.inserted_id)
+    }
 
 @app.post("/login")
 def login(user: UserIn):
@@ -885,8 +999,6 @@ def universities_search(
 
     return {"total": total, "page": page, "limit": limit, "items": items}
 
-
-
 ### NOTIFICATIONS ####
 
 # @app.on_event("startup")
@@ -911,7 +1023,6 @@ def get_unread_notifications(mail: str):
         })
 
     return {"notifications": result}
-from fastapi import Body
 
 @app.post('/api/notification/mark-read')
 def mark_notifications_as_read(mail: str = Body(..., embed=True)):
@@ -946,7 +1057,7 @@ def check_deadlines():
             duein = (i["deadline"].date() - today.date()).days
             scholars.append(f"{i['scholarship_name']} ( due in {duein} days)") 
         
-   
+        
         if scholars.__len__() > 0 :
             for i in scholars:
                 scholars_text = "<li><b>{i}</b></li>"
@@ -1005,6 +1116,7 @@ def manual_cleanup(days: int = 7):
         "created_at": {"$lt": cutoff}
     })
     return {"ok": True, "deleted": result.deleted_count}
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
