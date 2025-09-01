@@ -21,6 +21,8 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from match import router as match_router
 from pydantic import  EmailStr
+from datetime import datetime
+
 # in main.py
 from pydantic import BaseModel, EmailStr
 
@@ -170,15 +172,13 @@ def parse_deadline(s: str):
 
 def format_deadline_with_month(date_obj: datetime) -> str:
     """
-    Convert datetime object -> string in dd/Mon/yy format
+    Convert datetime object -> string in dd/Mon/yy format.
     Example: 2025-05-15 -> "15/May/25"
     """
-    # NOTE: we use `import datetime` later; this guard stays as-is.
-    if isinstance(date_obj, datetime.datetime):
-        return date_obj.strftime("%d/%b/%y")
+    if isinstance(date_obj, datetime):  # Use `datetime` directly
+        return date_obj.strftime("%d/%b/%y")  # Format the date into dd/Mon/yy
     else: 
-        return None
-
+        return None  # Return None if not a valid datetime object
 def fields_token_regex(code: str):
     # compiled regex that matches whole token in CSV string:  "14,11,10,..."
     return re.compile(rf"(?:^|,){re.escape((code or '').strip())}(?:,|$)")
@@ -225,7 +225,6 @@ def _fields_ids_to_names(raw) -> list[str]:
             seen.add(name)
             names.append(name)
     return names
-
 def to_public(d: dict):
     amount = clean_amount(d.get("amount", "")) or "Fully Funded"
     field_names = _fields_ids_to_names(d.get("fields"))
@@ -234,22 +233,23 @@ def to_public(d: dict):
     deadline_dt = None
     deadline_str = None
 
-    if isinstance(deadline_val, datetime.datetime):
+    # Check if `deadline_val` is a datetime object (from the datetime module)
+    if isinstance(deadline_val, datetime):
         deadline_dt = deadline_val
-        deadline_str = deadline_val.strftime("%d/%b/%y")
+        deadline_str = deadline_val.strftime("%d/%b/%y")  # Format it into a readable string
     elif isinstance(deadline_val, str) and deadline_val.strip().lower() == "no fix":
-        deadline_str = "No Fix"
+        deadline_str = "No Fix"  # Handle "No Fix" case
 
     return {
-        "id": str(d.get("_id")),
+        "id": str(d.get("_id")),  # Ensure _id is properly converted to string
         "scholarship_name": d.get("scholarship_name"),
         "provider": d.get("provider"),
         "country": d.get("country"),
         "fields": field_names,
         "level": d.get("level"),
         "min_gpa": d.get("min_gpa"),
-        "deadline": deadline_dt,        # keep datetime for sorting (None if "No Fix")
-        "deadlineDate": deadline_str,   # human readable (or "No Fix")
+        "deadline": deadline_dt,        # Keep the datetime object for sorting
+        "deadlineDate": deadline_str,   # Human-readable deadline string (or "No Fix")
         "amount": amount,
         "type": d.get("type"),
         "eligibility": d.get("eligibility"),
@@ -257,7 +257,6 @@ def to_public(d: dict):
         "Ecountry": d.get("Ecountry"),
         "link": d.get("link"),
     }
-
 def csv_token_regex(code: str):
     """Match a whole-number token inside a CSV string, e.g. '28,7,27' matches '7' but not '17'."""
     return re.compile(rf"(?:^|,){re.escape((code or '').strip())}(?:,|$)")
@@ -812,13 +811,14 @@ def save_prefs(p: PrefsIn):
     )
     return {"ok": True, "msg": "Preferences saved"}
 
-# import datetime
+from datetime import datetime  # Correctly import the datetime class
+
 @app.get("/api/scholarships/near-deadline")
 def scholarships_near_deadline(limit: int = 5):
     """
     Get scholarships sorted by deadline closest to now (future only).
     """
-    today = datetime.utcnow()
+    today = datetime.utcnow()  # Use the `datetime` class here.
 
     # Helper function to parse deadlines safely
     def parse_deadline(deadline_str):
@@ -833,7 +833,7 @@ def scholarships_near_deadline(limit: int = 5):
 
     for doc in docs:
         d = doc.get("deadline", "")
-        if isinstance(d, datetime.datetime) and d > today:  # only future deadlines
+        if isinstance(d, datetime) and d > today:  # Use `datetime` directly
             valid_deadlines.append((doc, d))
 
     # Sort by soonest deadline

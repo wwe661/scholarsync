@@ -246,6 +246,12 @@ export default function CostPredict() {
           </div>
         )}
       </div>
+      <button
+          onClick={() => navigate(-1)} // Go back to the previous page
+          className="bg-[#254085] text-white rounded-lg font-semibold px-4 py-2 mb-4 mt-5"
+        >
+          Back
+        </button>
     </div>
   );
 }
