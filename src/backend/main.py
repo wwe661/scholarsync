@@ -106,11 +106,12 @@ app = FastAPI(lifespan=lifespan)
 app.state.mongo = client
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or ["*"] to allow all
+    allow_origins=["http://localhost:5173"],  # Only allow requests from this specific origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # 🔹 Static files for avatar uploads (added)
 BASE_DIR = Path(__file__).resolve().parent

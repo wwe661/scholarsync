@@ -20,136 +20,137 @@ const AuthPage = () => {
     return regex.test(password);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMsg("");
-    setPasswordError("");
-    setEmailError("");
-    setLoading(true); // Start loading
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setMsg("");
+  setPasswordError("");
+  setEmailError("");
+  setLoading(true); // Start loading
 
-    // If sign up, check password strength and match
-    if (!isLogin) {
-      if (!isStrongPassword(password)) {
-        setPasswordError("Password must be at least 8 characters long, include a number, and a special character.");
-        setLoading(false); // Stop loading
-        return;
-      }
-
-      // Check if passwords match
-      if (password !== confirmPassword) {
-        setPasswordError("Passwords do not match.");
-        setLoading(false); // Stop loading
-        return;
-      }
-
-      try {
-        // Check if email already exists for signup
-        const emailCheckRes = await fetch(`${API_BASE}/check-email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-
-        const emailCheckData = await emailCheckRes.json();
-
-        if (emailCheckRes.ok && emailCheckData.exists) {
-          setEmailError("Email already exists. Please try another one.");
-          setLoading(false); // Stop loading
-          return;
-        }
-
-        const res = await fetch(`${API_BASE}/signup`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          setMsg(text || "Request failed");
-          setLoading(false); // Stop loading
-          return;
-        }
-
-        const data = await res.json();
-
-        if (data && data.ok === false) {
-          setMsg(data.detail || data.msg || "Invalid credentials");
-          setLoading(false); // Stop loading
-          return;
-        }
-
-        const resolvedEmail = (data && (data.email || data.user?.email)) || email;
-        const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
-
-        const user = {
-          email: resolvedEmail,
-          name: resolvedEmail?.split("@")[0] || "User",
-          userId,
-        };
-        localStorage.setItem("user", JSON.stringify(user));
-        localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
-        localStorage.setItem("auth_email", resolvedEmail);
-        localStorage.setItem("userId", userId);
-
-        window.dispatchEvent(new Event("auth-changed"));
-
-        navigate("/"); // navigate to home page or any other route
-      } catch (err) {
-        setMsg(err.message || "Something went wrong");
-        setLoading(false); // Stop loading
-      }
-    } else {
-      // Handle login logic here (without the password confirm)
-      try {
-        const res = await fetch(`${API_BASE}/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          setMsg(text || "Request failed");
-          setLoading(false); // Stop loading
-          return;
-        }
-
-        const data = await res.json();
-
-        if (data && data.ok === false) {
-          setMsg(data.detail || data.msg || "Invalid credentials");
-          setLoading(false); // Stop loading
-          return;
-        }
-
-        const resolvedEmail = (data && (data.email || data.user?.email)) || email;
-        const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
-
-        const user = {
-          email: resolvedEmail,
-          name: resolvedEmail?.split("@")[0] || "User",
-          userId,
-        };
-        localStorage.setItem("user", JSON.stringify(user));
-        localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
-        localStorage.setItem("auth_email", resolvedEmail);
-        localStorage.setItem("userId", userId);
-
-        window.dispatchEvent(new Event("auth-changed"));
-
-        // Check if the login is with the admin credentials
-        if (resolvedEmail === "admin@gmail.com" && password === "Admin@123") {
-          navigate("/admin"); // Redirect to admin page
-        } else {
-          navigate("/"); // Navigate to home page for regular users
-        }
-      } catch (err) {
-        setMsg(err.message || "Something went wrong");
-        setLoading(false); // Stop loading
-      }
+  // If sign up, check password strength and match
+  if (!isLogin) {
+    if (!isStrongPassword(password)) {
+      setPasswordError("Password must be at least 8 characters long, include a number, and a special character.");
+      setLoading(false); // Stop loading
+      return;
     }
-  };
+
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      setLoading(false); // Stop loading
+      return;
+    }
+
+    try {
+      // Check if email already exists for signup
+      const emailCheckRes = await fetch(`${API_BASE}/check-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const emailCheckData = await emailCheckRes.json();
+
+      if (emailCheckRes.ok && emailCheckData.exists) {
+        setEmailError("Email already exists. Please try another one.");
+        setLoading(false); // Stop loading
+        return;
+      }
+
+      const res = await fetch(`${API_BASE}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        setMsg(text || "Request failed");
+        setLoading(false); // Stop loading
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data && data.ok === false) {
+        setMsg(data.detail || data.msg || "Invalid credentials");
+        setLoading(false); // Stop loading
+        return;
+      }
+
+      const resolvedEmail = (data && (data.email || data.user?.email)) || email;
+      const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
+
+      const user = {
+        email: resolvedEmail,
+        name: resolvedEmail?.split("@")[0] || "User",
+        userId,
+      };
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
+      localStorage.setItem("auth_email", resolvedEmail);
+      localStorage.setItem("userId", userId);
+
+      window.dispatchEvent(new Event("auth-changed"));
+
+      navigate("/"); // navigate to home page or any other route
+    } catch (err) {
+      setMsg(err.message || "Something went wrong");
+      setLoading(false); // Stop loading
+    }
+  } else {
+    // Handle login logic here (without the password confirm)
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        setMsg(text || "Request failed");
+        setLoading(false); // Stop loading
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data && data.ok === false) {
+        setMsg(data.detail || data.msg || "Invalid credentials");
+        setLoading(false); // Stop loading
+        return;
+      }
+
+      const resolvedEmail = (data && (data.email || data.user?.email)) || email;
+      const userId = (data && (data.user_id || data.userId || data.user?._id)) || "";
+
+      const user = {
+        email: resolvedEmail,
+        name: resolvedEmail?.split("@")[0] || "User",
+        userId,
+      };
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("authUser", JSON.stringify({ email: resolvedEmail }));
+      localStorage.setItem("auth_email", resolvedEmail);
+      localStorage.setItem("userId", userId);
+
+      window.dispatchEvent(new Event("auth-changed"));
+
+      // Check if the login is with the admin credentials
+      if (data.is_admin) {
+        navigate("/admin"); // Redirect to admin page
+      } else {
+        navigate("/"); // Navigate to home page for regular users
+      }
+    } catch (err) {
+      setMsg(err.message || "Something went wrong");
+      setLoading(false); // Stop loading
+    }
+  }
+};
+
 
   return (
     <div className="flex min-h-screen justify-center items-center bg-[#254085]">

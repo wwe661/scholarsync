@@ -1641,7 +1641,7 @@ export default function Admin() {
                   // clear any auth if you store it
                   localStorage.removeItem("token");
                   localStorage.removeItem("user");
-                  window.location.href = "/";
+                  window.location.href = "/authpage";
                 }}
                 className="px-4 py-2 bg-red-600 text-white rounded-xl"
               >

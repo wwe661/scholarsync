@@ -1,15 +1,14 @@
-# match.py
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 import os
 import re
-
 from fastapi import APIRouter, HTTPException, Query
 from pymongo import MongoClient
 from bson import ObjectId
 from dotenv import load_dotenv, dotenv_values
 from pathlib import Path
+import logging
 
 router = APIRouter()
 
@@ -85,12 +84,15 @@ def _calc_rank(s: Dict[str, Any], u: Dict[str, Any]) -> float:
         rank += 10
 
     # Fields (user fields are names). Scholarship doc might be CSV string or list—handle both.
-   # Fields (user fields are names). Scholarship doc might be CSV string or list—handle both.
     s_fields = s.get("fields") or []
     if isinstance(s_fields, str):
         s_fields = [x.strip() for x in s_fields.split(",") if x.strip()]
-    # normalize for safe matching (case-insensitive, trim)
-    s_fields_norm = {x.strip().casefold() for x in s_fields if x}
+    elif isinstance(s_fields, list):
+        # Ensure each element is a string and strip it
+        s_fields = [str(x).strip() for x in s_fields if isinstance(x, (str, int)) and x]
+
+    # Normalize for safe matching (case-insensitive, trim)
+    s_fields_norm = {x.casefold() for x in s_fields if isinstance(x, str)}
 
     u_fields = [x for x in (u.get("fields") or []) if isinstance(x, str) and x.strip()]
     if u_fields:
@@ -108,7 +110,6 @@ def _calc_rank(s: Dict[str, Any], u: Dict[str, Any]) -> float:
             # If scholarship contains this field → add distributed points
             if f_norm in s_fields_norm:
                 rank += per
-
 
     # Level
     s_level = s.get("level", "")
@@ -162,26 +163,31 @@ def build_user_ranking(email: str):
     Build (or rebuild) the <UserName>ranking collection for the given user email.
     Returns how many rows were written.
     """
-    uinfo = _get_userinfo(email)
-    ranking_col = db[_collection_name_for_user(uinfo)]
+    try:
+        uinfo = _get_userinfo(email)
+        ranking_col = db[_collection_name_for_user(uinfo)]
 
-    ranked: List[Dict[str, Any]] = []
-    for s in scholar_col.find({}):
-        score = _calc_rank(s, uinfo)
-        ranked.append({"scholarid": s["_id"], "rank": score})
+        ranked: List[Dict[str, Any]] = []
+        for s in scholar_col.find({}):
+            score = _calc_rank(s, uinfo)
+            ranked.append({"scholarid": s["_id"], "rank": score})
 
-    ranked.sort(key=lambda r: r["rank"], reverse=True)
+        ranked.sort(key=lambda r: r["rank"], reverse=True)
 
-    ranking_col.delete_many({})
-    if ranked:
-        ranking_col.insert_many(ranked)
+        ranking_col.delete_many({})
+        if ranked:
+            ranking_col.insert_many(ranked)
 
-    return {
-        "ok": True,
-        "user": email,
-        "collection": ranking_col.name,
-        "total": len(ranked),
-    }
+        return {
+            "ok": True,
+            "user": email,
+            "collection": ranking_col.name,
+            "total": len(ranked),
+        }
+
+    except Exception as e:
+        logging.error(f"Error in building rankings: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.get("/api/match")
 def get_user_matches(
@@ -194,38 +200,42 @@ def get_user_matches(
     Read from the user's <UserName>ranking collection and join the top results
     with scholarships. Filters by min_rank.
     """
-    uinfo = _get_userinfo(email)
-    ranking_col = db[_collection_name_for_user(uinfo)]
+    try:
+        uinfo = _get_userinfo(email)
+        ranking_col = db[_collection_name_for_user(uinfo)]
 
-    rank_docs = list(ranking_col.find({"rank": {"$gte": float(min_rank)}}, {"_id": 0, "scholarid": 1, "rank": 1}))
-    if not rank_docs:
-        return {"total": 0, "page": page, "limit": limit, "items": []}
+        rank_docs = list(ranking_col.find({"rank": {"$gte": float(min_rank)}}, {"_id": 0, "scholarid": 1, "rank": 1}))
+        if not rank_docs:
+            return {"total": 0, "page": page, "limit": limit, "items": []}
 
-    ids = [rd["scholarid"] if isinstance(rd["scholarid"], ObjectId) else ObjectId(rd["scholarid"]) for rd in rank_docs]
-    rank_map = {str(rd["scholarid"]): rd["rank"] for rd in rank_docs}
+        ids = [rd["scholarid"] if isinstance(rd["scholarid"], ObjectId) else ObjectId(rd["scholarid"]) for rd in rank_docs]
+        rank_map = {str(rd["scholarid"]): rd["rank"] for rd in rank_docs}
 
-    cur = scholar_col.find({"_id": {"$in": ids}})
-    docs = []
-    for d in cur:
-        item = {
-            "id": str(d["_id"]),
-            "scholarship_name": d.get("scholarship_name"),
-            "provider": d.get("provider"),
-            "country": d.get("country"),
-            "fields": d.get("fields"),
-            "level": d.get("level"),
-            "deadline": d.get("deadline"),
-            "amount": (d.get("amount") or "").replace("�", "£").strip() or "Fully Funded",
-            "type": d.get("type"),
-            "link": d.get("link"),
-            "rank": rank_map.get(str(d["_id"]), 0),
-        }
-        docs.append(item)
+        cur = scholar_col.find({"_id": {"$in": ids}})
+        docs = []
+        for d in cur:
+            item = {
+                "id": str(d["_id"]),
+                "scholarship_name": d.get("scholarship_name"),
+                "provider": d.get("provider"),
+                "country": d.get("country"),
+                "fields": d.get("fields"),
+                "level": d.get("level"),
+                "deadline": d.get("deadline"),
+                "amount": (d.get("amount") or "").replace("�", "£").strip() or "Fully Funded",
+                "type": d.get("type"),
+                "link": d.get("link"),
+                "rank": rank_map.get(str(d["_id"]), 0),
+            }
+            docs.append(item)
 
-    # sort by rank desc
-    docs.sort(key=lambda x: (x.get("rank") is None, x.get("rank", 0)), reverse=True)
+        docs.sort(key=lambda x: (x.get("rank") is None, x.get("rank", 0)), reverse=True)
 
-    total = len(docs)
-    start = (page - 1) * limit
-    end = start + limit
-    return {"total": total, "page": page, "limit": limit, "items": docs[start:end]}
+        total = len(docs)
+        start = (page - 1) * limit
+        end = start + limit
+        return {"total": total, "page": page, "limit": limit, "items": docs[start:end]}
+
+    except Exception as e:
+        logging.error(f"Error fetching user matches: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
