@@ -725,7 +725,7 @@ def signup(user: UserIn):
         <h2 style="color:#254085;">🎉 Welcome to Our System!</h2>
         <p>Hi <b>""" + name + """</b>,</p>
         <p>We’re excited to have you onboard 🚀</p>
-        <a href="https://localhost:5173"
+        <a href="http://localhost:5173/"
            style="display:inline-block;background:#254085;color:white;padding:12px 20px;
                   text-decoration:none;border-radius:5px;margin-top:20px;">
            Get Started
@@ -1125,7 +1125,7 @@ def check_deadlines():
                 <p>The following Scholars are due soon:</p>
                 <ul>"""+scholars_text+"""
                 </ul>
-                <a href="https://localhost:5173" 
+                <a href="http://localhost:5173/" 
                     style="display:inline-block;background:#e74c3c;color:white;padding:12px 20px;
                             text-decoration:none;border-radius:5px;margin-top:20px;">
                     View Tasks
