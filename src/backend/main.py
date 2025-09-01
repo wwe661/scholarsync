@@ -89,10 +89,16 @@ col = db["scholarships"]
 notifications = db["notifications"]
 scheduler = AsyncIOScheduler()
 
+CHECK_DEADLINE_HOUR = int(os.getenv("CHECK_DEADLINE_HOUR", 8))
+CHECK_DEADLINE_MINUTE = int(os.getenv("CHECK_DEADLINE_MINUTE", 0))
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    scheduler.add_job(check_deadlines, "cron", hour=8, minute=0)  # run daily at 14:00 UTC
+    
+    scheduler.add_job(check_deadlines, "cron",
+    hour=CHECK_DEADLINE_HOUR,
+    minute=CHECK_DEADLINE_MINUTE)  # run daily at 14:00 UTC
     scheduler.add_job(cleanup_notifications, "cron", hour=3, minute=0)
     scheduler.start()
     print("Scheduler started")
@@ -405,7 +411,7 @@ def save_uni_prefs(p: UniPrefsIn):
         {"$set": {
             "prefs.uniPreferredSubjectIds": [str(x) for x in (p.uniPreferredSubjectIds or [])],
             "prefs.uniPreferredCountries": list(p.uniPreferredCountries or []),
-            "prefs.updatedAt": datetime.datetime.utcnow()
+            "prefs.updatedAt": datetime.utcnow()
         }},
         upsert=True
     )
@@ -607,7 +613,7 @@ def update_user(user_id: str, payload: UserProfileIn):
     if payload.password: updates["password"] = payload.password  # demo only
 
     if updates:
-        updates["updated_at"] = datetime.datetime.utcnow()
+        updates["updated_at"] = datetime.utcnow()
         users_col.update_one({"_id": oid}, {"$set": updates})
 
     new_doc = users_col.find_one({"_id": oid})
@@ -636,7 +642,7 @@ def change_password(user_id: str, body: PasswordChangeIn):
         raise HTTPException(status_code=404, detail="User not found")
     if (doc.get("password") or "") != body.currentPassword:
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    users_col.update_one({"_id": oid}, {"$set": {"password": body.newPassword, "updated_at": datetime.datetime.utcnow()}})
+    users_col.update_one({"_id": oid}, {"$set": {"password": body.newPassword, "updated_at": datetime.utcnow()}})
     return {"ok": True, "msg": "Password updated"}
 
 @app.post("/upload/avatar")
@@ -688,7 +694,7 @@ def signup(user: UserIn):
     if users_col.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email already exists")
 
-    today = datetime.datetime.utcnow()
+    today = datetime.utcnow()
 
     # Create user with empty profilePic => navbar falls back to initial letter
     doc = {
@@ -719,7 +725,7 @@ def signup(user: UserIn):
         <h2 style="color:#254085;">🎉 Welcome to Our System!</h2>
         <p>Hi <b>""" + name + """</b>,</p>
         <p>We’re excited to have you onboard 🚀</p>
-        <a href="https://localhost:5173"
+        <a href="http://localhost:5173/"
            style="display:inline-block;background:#254085;color:white;padding:12px 20px;
                   text-decoration:none;border-radius:5px;margin-top:20px;">
            Get Started
@@ -800,7 +806,7 @@ def save_prefs(p: PrefsIn):
             "prefs.country": p.country,
             "prefs.fieldIds": p.fieldIds or [],
             "prefs.min_gpa": (p.min_gpa if p.min_gpa is not None else None),  # <-- SAVE IT
-            "updatedAt": datetime.datetime.utcnow()
+            "updatedAt": datetime.utcnow()
         }},
         upsert=True
     )
@@ -812,7 +818,7 @@ def scholarships_near_deadline(limit: int = 5):
     """
     Get scholarships sorted by deadline closest to now (future only).
     """
-    today = datetime.datetime.utcnow()
+    today = datetime.utcnow()
 
     # Helper function to parse deadlines safely
     def parse_deadline(deadline_str):
@@ -1085,56 +1091,55 @@ def mark_notifications_as_read(mail: str = Body(..., embed=True)):
         "modified": result.modified_count
     }
 
-import datetime
+# import datetime
 def check_deadlines():
     now = datetime.utcnow()
     today = now.date()
     
     # run only if 2 PM UTC (or adjust timezone)
-    if now.hour == 14:
-        today = datetime.now()
-        next_7_days = today + timedelta(days=7)
+    today = datetime.now()
+    next_7_days = today + timedelta(days=7)
 
-        upcoming = col.find({
-            "deadline": {"$gte": today, "$lte": next_7_days}
-        }).sort("deadline", 1).limit(3)
-        scholars = []
-        for i in upcoming:
-            duein = (i["deadline"].date() - today.date()).days
-            scholars.append(f"{i['scholarship_name']} ( due in {duein} days)") 
-        
-        
-        if scholars.__len__() > 0 :
-            for i in scholars:
-                scholars_text = "<li><b>{i}</b></li>"
-            for user in users_col.find():
-                name = user.get("email").split("@")[0]
-                text = ", ".join(scholars)
-                
-                reminder_html = """
-                <html>
-                <body style="font-family: Arial; background:#f9f9f9; padding:20px;">
-                    <div style="max-width:600px;margin:auto;background:white;padding:20px;border-radius:8px;">
-                    <h2 style="color:#e74c3c;">⏰ Upcoming Deadlines</h2>
-                    <p>Hello <b>"""+ name +"""</b>,</p>
-                    <p>The following Scholars are due soon:</p>
-                    <ul>"""+scholars_text+"""
-                    </ul>
-                    <a href="https://localhost:5173" 
-                        style="display:inline-block;background:#e74c3c;color:white;padding:12px 20px;
-                                text-decoration:none;border-radius:5px;margin-top:20px;">
-                        View Tasks
-                    </a>
-                    <p style="margin-top:30px;">Best,<br>ScholarSync</p>
-                    </div>
-                </body>
-                </html>
-                """ 
-                create_notification(
-                    user["email"], "deadline_reminder",
-                    f"Reminder: These scholarships are due within 7 days: {text}"
-                )
-                send_email(user["email"], "Scholarship Deadlines", reminder_html)
+    upcoming = col.find({
+        "deadline": {"$gte": today, "$lte": next_7_days}
+    }).sort("deadline", 1).limit(3)
+    scholars = []
+    for i in upcoming:
+        duein = (i["deadline"].date() - today.date()).days
+        scholars.append(f"{i['scholarship_name']} ( due in {duein} days)") 
+    
+    
+    if scholars.__len__() > 0 :
+        for i in scholars:
+            scholars_text = "<li><b> "+i+" </b></li>"
+        for user in users_col.find():
+            name = user.get("email").split("@")[0]
+            text = ", ".join(scholars)
+            
+            reminder_html = """
+            <html>
+            <body style="font-family: Arial; background:#f9f9f9; padding:20px;">
+                <div style="max-width:600px;margin:auto;background:white;padding:20px;border-radius:8px;">
+                <h2 style="color:#e74c3c;">⏰ Upcoming Deadlines</h2>
+                <p>Hello <b>"""+ name +"""</b>,</p>
+                <p>The following Scholars are due soon:</p>
+                <ul>"""+scholars_text+"""
+                </ul>
+                <a href="http://localhost:5173/" 
+                    style="display:inline-block;background:#e74c3c;color:white;padding:12px 20px;
+                            text-decoration:none;border-radius:5px;margin-top:20px;">
+                    View Tasks
+                </a>
+                <p style="margin-top:30px;">Best,<br>ScholarSync</p>
+                </div>
+            </body>
+            </html>
+            """ 
+            create_notification(
+                user["email"], "deadline_reminder",
+                f"Reminder: These scholarships are due within 7 days: {text}"
+            )
+            send_email(user["email"], "Scholarship Deadlines", reminder_html)
 
 def create_notification(mail, type, text):
     print("noti create", mail, type, text)
@@ -1142,7 +1147,7 @@ def create_notification(mail, type, text):
         "mail": mail,
         "type": type,
         "text": text,
-        "created_at": datetime.datetime.utcnow(),
+        "created_at": datetime.utcnow(),
         "read": False
     })
 
