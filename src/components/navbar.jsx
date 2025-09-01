@@ -327,17 +327,18 @@ const Navbar = () => {
       ) : (
         <div className="flex gap-3">
           <Link
-            to="/authpage"
-            className="px-5 py-2 text-sm font-medium rounded-lg border border-white text-white hover:bg-white hover:text-[#254085] transition"
-          >
-            Login
-          </Link>
-          <Link
-            to="/authpage"
-            className="px-5 py-2 text-sm font-medium rounded-lg bg-white text-[#254085] hover:bg-gray-100 transition"
-          >
-            Sign Up
-          </Link>
+  to="/authpage?section=login"  // Navigates to login section
+  className="px-5 py-2 text-sm font-medium rounded-lg border border-white text-white hover:bg-white hover:text-[#254085] transition"
+>
+  Login
+</Link>
+
+<Link
+  to="/authpage?section=signup"  // Navigates to sign up section
+  className="px-5 py-2 text-sm font-medium rounded-lg bg-white text-[#254085] hover:bg-gray-100 transition"
+>
+  Sign Up
+</Link>
         </div>
       )}
     </nav>

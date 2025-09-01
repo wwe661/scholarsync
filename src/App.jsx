@@ -24,6 +24,8 @@ import CostPredict from "./pages/CostPredict";
 import ScholarAnalysis from "./pages/scholar_analysis";
 import UniAnalysis from "./pages/uni_analysis";
 import Profile from './pages/Profile';
+import '@fortawesome/fontawesome-free/css/all.min.css';
+
 function AppContent() {
   const location = useLocation();
   const hideNavbar = /^\/(authpage|admin)(\/|$)/.test(location.pathname);
