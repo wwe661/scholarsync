@@ -63,8 +63,8 @@ def _safe_collection_name(email: str) -> str:
     """
     local = (email or "").split("@")[0]
     alnum = re.sub(r"[^A-Za-z0-9]", "", local)
-    prefix = (alnum[:2] or "us").lower()
-    return f"{prefix}ranking"
+    prefix = (alnum or "us").lower()
+    return f"{prefix}uniranking"
 
 def _get_userinfo(email: str) -> Dict[str, Any]:
     u = users_col.find_one({"email": email})

@@ -114,7 +114,7 @@ app = FastAPI(lifespan=lifespan)
 app.state.mongo = client
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Only allow requests from this specific origin
+    allow_origins=["*"],  # Only allow requests from this specific origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -724,7 +724,7 @@ def signup(user: UserIn):
         <h2 style="color:#254085;">🎉 Welcome to Our System!</h2>
         <p>Hi <b>""" + name + """</b>,</p>
         <p>We’re excited to have you onboard 🚀</p>
-        <a href="http://localhost:5173/"
+        <a href="http://172.20.1.227:5173/"
            style="display:inline-block;background:#254085;color:white;padding:12px 20px;
                   text-decoration:none;border-radius:5px;margin-top:20px;">
            Get Started
@@ -1098,10 +1098,10 @@ def check_deadlines():
     
     # run only if 2 PM UTC (or adjust timezone)
     today = datetime.now()
-    next_7_days = today + timedelta(days=7)
+    next_30_days = today + timedelta(days=30)
 
     upcoming = col.find({
-        "deadline": {"$gte": today, "$lte": next_7_days}
+        "deadline": {"$gte": today, "$lte": next_30_days}
     }).sort("deadline", 1).limit(3)
     scholars = []
     for i in upcoming:
@@ -1125,10 +1125,10 @@ def check_deadlines():
                 <p>The following Scholars are due soon:</p>
                 <ul>"""+scholars_text+"""
                 </ul>
-                <a href="http://localhost:5173/" 
+                <a href="http://172.20.1.227:5173/" 
                     style="display:inline-block;background:#e74c3c;color:white;padding:12px 20px;
                             text-decoration:none;border-radius:5px;margin-top:20px;">
-                    View Tasks
+                    View Website to change detail
                 </a>
                 <p style="margin-top:30px;">Best,<br>ScholarSync</p>
                 </div>

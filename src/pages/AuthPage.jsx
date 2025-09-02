@@ -150,7 +150,13 @@ const AuthPage = () => {
         localStorage.setItem("userId", userId);
 
         window.dispatchEvent(new Event("auth-changed"));
-        navigate("/"); 
+        // navigate("/");
+        // Check if the login is with the admin credentials
+        if (data.is_admin) {
+          navigate("/admin"); // Redirect to admin page
+        } else {
+          navigate("/"); // Navigate to home page for regular users
+        } 
 
       } catch (err) {
         setMsg(err.message || "Something went wrong");

@@ -7,7 +7,8 @@ import matchImg from '/match.jpg';
 import searchImg from '/search.jpg';
 import analyzeImg from '/analyze.jpg';
 import logooImg from '/logoo.png';
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://0.0.0.0:8000";
+// const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const CARD_W = 270;   // must match the card’s CSS width
 const GAP_PX = 24;    // Tailwind gap-6 = 24px
 const VISIBLE = 3;    // exactly two cards visible

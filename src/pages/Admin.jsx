@@ -21,7 +21,7 @@ import AdminProfile from "./AdminProfile";
 import Admin_Dashboard from "./Admin_Dashboard";
 
 // Backend API
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const ENDPOINTS = {
   dashboard: "/admin/dashboard", // ✅ replaced analysis
   users: "/admin/users",
