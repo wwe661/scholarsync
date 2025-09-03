@@ -74,7 +74,7 @@ const MatchScholar = () => {
   const navigate = useNavigate();
 
   const minRank = 60;
-  const limit = 12;
+  const limit = 18;
   const page = 1;
 
   useEffect(() => {

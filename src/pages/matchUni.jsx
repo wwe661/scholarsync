@@ -18,7 +18,7 @@ const MatchUni = () => {
   const [costLoading, setCostLoading] = useState(false);
   const navigate = useNavigate();
 
-  const limit = 20;
+  const limit = 18;
   const minRank = 0;
 
   // sync with localStorage updates from forms
@@ -216,7 +216,7 @@ const MatchUni = () => {
               {(u.students &&
                 `${u.students.toLocaleString?.() ?? u.students} students`) ||
                 ""}
-              {u.international ? ` • Intl: ${u.international}` : ""}
+              
             </div>
 
             <div className="w-full h-2 bg-gray-200 rounded-full mb-2">
