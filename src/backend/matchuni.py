@@ -1,4 +1,4 @@
-# matchuni.py
+# matchuni.py — Gower dissimilarity (mixed features) + Jaccard (subjects)
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import os, re
@@ -11,12 +11,12 @@ from pathlib import Path
 router = APIRouter()
 
 # ---------- Configurable weights ----------
-# Numeric sub-weights (sum doesn't need to be 1; we re-normalize)
-W_RANK   = 0.30
-W_OUT    = 0.20
-W_COUNTRY= 0.10
+# Per-feature weights for Gower dissimilarity (we ignore components that are None)
+W_RANK    = 0.30  # lower world rank is better
+W_OUTLOOK = 0.20  # higher outlook score is better
+W_COUNTRY = 0.10  # user preferred countries; only applied if user has prefs
 
-# Blend weights between numeric similarity and subjects Jaccard
+# Blend weights between numeric similarity (1 - Gower D) and subjects Jaccard
 ALPHA_NUMERIC = 0.60
 BETA_SUBJECTS = 0.40
 
@@ -47,7 +47,7 @@ university_col = db["University"]
 unisubjects_col = db["Unisubjects"]
 
 # ---------- helpers ----------
-def _safe_int(v, default: int = 0) -> int:
+def _safe_int(v, default: Optional[int] = 0) -> Optional[int]:
     try:
         if v is None: return default
         if isinstance(v, (int, float)): return int(v)
@@ -56,7 +56,7 @@ def _safe_int(v, default: int = 0) -> int:
     except Exception:
         return default
 
-def _safe_float(v, default: float = 0.0) -> float:
+def _safe_float(v, default: Optional[float] = 0.0) -> Optional[float]:
     try:
         if v is None: return default
         if isinstance(v, (int, float)): return float(v)
@@ -127,7 +127,62 @@ def _jaccard(a: set, b: set) -> float:
     union = len(a | b) or 1
     return inter / union
 
-# ---------- Scoring (Manhattan on scaled numerics + Jaccard on subjects) ----------
+# ---------- Per-feature *dissimilarities* for Gower (0 = identical/best, 1 = worst) ----------
+def _rank_dist(rank_val: Optional[int]) -> Optional[float]:
+    """
+    Distance grows with world rank (lower is better).
+    If missing/invalid (<=0), return None to ignore.
+    """
+    r = _safe_int(rank_val, None)
+    if r is None or r <= 0:
+        return None
+    return _clip01(r / RANK_CAP)
+
+def _outlook_dist(uni_doc: Dict[str, Any]) -> Optional[float]:
+    """
+    Use InternationalOutlookScore or fallback Outlook; both expected in 0..100.
+    Distance decreases as outlook increases: d = 1 - (out/100).
+    If missing, return None to ignore (won't affect score).
+    """
+    raw = uni_doc.get("InternationalOutlookScore")
+    if raw is None:
+        raw = uni_doc.get("Outlook")
+    if raw is None:
+        return None
+    out = _safe_float(raw, None)
+    if out is None:
+        return None
+    return _clip01(1.0 - (out / 100.0))
+
+def _country_dist(uni_country: Optional[str], want_countries: set[str]) -> Optional[float]:
+    """
+    Nominal distance based on user's preferred countries (if any):
+      - If user provided preferences: 0 if uni_country in prefs else 1
+      - If no preferences: None (ignored)
+    """
+    if not want_countries:
+        return None
+    c = (uni_country or "").strip().lower()
+    return 0.0 if c in want_countries else 1.0
+
+def _gower_dissimilarity(dists: List[Optional[float]], weights: List[float]) -> float:
+    """
+    Weighted Gower dissimilarity in [0,1]:
+        D = (Σ w_i * d_i) / (Σ w_i) over components with d_i not None and w_i>0
+    If no component contributes (den == 0), return 1.0 (so similarity = 0).
+    """
+    if not dists or not weights or len(dists) != len(weights):
+        return 1.0
+    num = 0.0
+    den = 0.0
+    for d, w in zip(dists, weights):
+        if d is None or w <= 0:
+            continue
+        num += w * _clip01(d)
+        den += w
+    return 1.0 if den == 0 else num / den
+
+# ---------- Scoring (Gower on mixed numerics/nominals + Jaccard on subjects) ----------
 def _score_university(
     u: Dict[str, Any],
     pref_countries: List[str],
@@ -136,39 +191,25 @@ def _score_university(
 ) -> float:
     """
     Hybrid similarity:
-      - Numeric similarity (scaled to [0,1]): rank, outlook, country_match (0/1)
+      - Mixed features via Gower dissimilarity D in [0,1] using:
+          * World Rank (lower is better)
+          * InternationalOutlookScore / Outlook (higher is better)
+          * Country preference (nominal)
+        Then numeric similarity S_num = 1 - D.
       - Subjects Jaccard (IDs if uni Subjects look numeric; else names)
-      - Final = 100 * ( ALPHA * numeric + BETA * Jaccard ), with dynamic reweighting
+      - Final = 100 * [ ALPHA_NUMERIC * S_num + BETA_SUBJECTS * Jaccard ]
     """
-
-    # ---- Numeric pieces → [0,1] ----
-    # Rank (lower is better), 1 - (rank/RANK_CAP)
-    rank = _safe_int(u.get("Rank"), 0)
-    if rank <= 0:
-        rank_score = 0.0
-    else:
-        rank = min(rank, RANK_CAP)
-        rank_score = _clip01(1.0 - (rank / RANK_CAP))
-
-    # Outlook (0..100)
-    outlook = _safe_float(u.get("InternationalOutlookScore", u.get("Outlook", 0.0)), 0.0)
-    outlook_score = _clip01(outlook / 100.0)
-
-    # Country match (only if user specified countries)
-    uni_country = (u.get("Country") or "").strip().lower()
+    # ---- Gower distances ----
+    d_rank    = _rank_dist(u.get("Rank"))                                # None or 0..1
+    d_outlook = _outlook_dist(u)                                          # None or 0..1
     want_countries = {c.strip().lower() for c in (pref_countries or []) if str(c).strip()}
-    country_score = 1.0 if (want_countries and uni_country in want_countries) else 0.0
+    d_country = _country_dist(u.get("Country"), want_countries)           # None or {0,1}
 
-    # Weighted average of active components
-    numeric_sum = 0.0
-    numeric_wsum = 0.0
-    numeric_sum += W_RANK * rank_score; numeric_wsum += W_RANK
-    numeric_sum += W_OUT  * outlook_score; numeric_wsum += W_OUT
-    if want_countries:
-        numeric_sum += W_COUNTRY * country_score
-        numeric_wsum += W_COUNTRY
+    dists   = [d_rank, d_outlook, d_country]
+    weights = [W_RANK, W_OUTLOOK, W_COUNTRY]
 
-    numeric_sim = (numeric_sum / numeric_wsum) if numeric_wsum > 0 else 0.0  # in [0,1]
+    D_gower = _gower_dissimilarity(dists, weights)                        # 0..1
+    numeric_sim = 1.0 - D_gower                                           # 0..1
 
     # ---- Subjects → Jaccard (IDs or names) ----
     subj_raw = str(u.get("Subjects") or "")
@@ -180,17 +221,12 @@ def _score_university(
     else:
         # treat as names
         uni_set = _names_to_set([t for t in subj_raw.split(",")]) if subj_raw else set()
-        user_set = _names_to_set(_subject_ids_to_names(pref_subject_ids))
+        user_set = _names_to_set(pref_subject_names)
 
     subj_jacc = _jaccard(uni_set, user_set)
 
-    # ---- Final blend with dynamic reweighting ----
-    alpha = ALPHA_NUMERIC if numeric_wsum > 0 else 0.0
-    beta  = BETA_SUBJECTS if user_set else 0.0
-    if alpha + beta == 0:
-        return 0.0
-
-    score01 = (alpha * numeric_sim + beta * subj_jacc) / (alpha + beta)
+    # ---- Final blend (fixed ALPHA/BETA) ----
+    score01 = ALPHA_NUMERIC * numeric_sim + BETA_SUBJECTS * subj_jacc
     return round(100.0 * score01, 3)
 
 def _uni_public(u: Dict[str, Any]) -> Dict[str, Any]:

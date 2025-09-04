@@ -1,4 +1,4 @@
-# match.py — Manhattan (scaled numerics) + Jaccard (subject ID sets)
+# match.py — Gower dissimilarity (mixed features) → similarity + Jaccard (subject ID sets)
 
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -48,15 +48,15 @@ users_col = db["users"]
 # -----------------------------------------------------------------------------
 # Tunable weights & scaling caps
 # -----------------------------------------------------------------------------
-ALPHA_NUMERIC = 0.7   # weight for Manhattan similarity (numeric features)
+ALPHA_NUMERIC = 0.7   # weight for (1 - Gower dissimilarity) on mixed features
 BETA_JACCARD  = 0.3   # weight for subject-set Jaccard similarity
 assert abs(ALPHA_NUMERIC + BETA_JACCARD - 1.0) < 1e-6, "Weights must sum to 1"
 
 GPA_MAX = 4.0                 # Normalize GPA to [0,4] then to [0,1]
 DEADLINE_MAX_DAYS = 180       # Sooner is better, cap at ~6 months
 
-# Credit when scholarship Ecountry is “International”
-ELIG_INTERNATIONAL_SCORE = 0.7
+# Credit when scholarship Ecountry is “International” (partial match)
+ELIG_INTERNATIONAL_SCORE = 0.7   # similarity; distance will be (1 - 0.7) = 0.3
 
 # -----------------------------------------------------------------------------
 # Country normalization (only UK and USA are recognized)
@@ -151,83 +151,93 @@ def _days_until(d: Optional[datetime]) -> Optional[int]:
     now = datetime.utcnow()
     return (d - now).days
 
-def _deadline_score(d: Optional[datetime]) -> float:
+# -------------- Per-feature *dissimilarities* (0 = identical/best, 1 = worst) --------------
+def _deadline_dist(d: Optional[datetime]) -> float:
     """
-    Sooner deadlines → higher score. Past/missing → 0.
-    0..1 linear decay across DEADLINE_MAX_DAYS.
+    Gower distance for deadline: d = min(1, days_until / DEADLINE_MAX_DAYS).
+    Past/missing -> 1 (worst).
     """
     days = _days_until(d)
     if days is None or days < 0:
-        return 0.0
-    return _clip01(1.0 - (days / DEADLINE_MAX_DAYS))
+        return 1.0
+    return _clip01(days / DEADLINE_MAX_DAYS)
 
 def _normalize_gpa(x) -> float:
     return _clip01(_to_float(x, 0.0) / GPA_MAX)
 
-def _level_match(user_level: str, s_level) -> float:
+def _gpa_dist(user_min_gpa_norm: float, schol_min_gpa_norm: float) -> float:
+    """
+    If user >= scholarship minimum: distance 0 (no penalty).
+    Else: distance = (schol_min - user_min) in [0,1].
+    """
+    gap = schol_min_gpa_norm - user_min_gpa_norm
+    return 0.0 if gap <= 0 else _clip01(gap)
+
+def _level_dist(user_level: str, schol_level) -> Optional[float]:
+    """
+    Nominal distance: 0 if matches (or in list), else 1. If user level blank -> None (ignore).
+    """
     if not user_level:
-        return 0.0
-    if isinstance(s_level, list):
-        ok = user_level in s_level
+        return None
+    if isinstance(schol_level, list):
+        ok = user_level in schol_level
     else:
-        ok = (user_level == s_level)
-    return 1.0 if ok else 0.0
+        ok = (user_level == schol_level)
+    return 0.0 if ok else 1.0
 
-def _country_match(user_country: str, s_country: str) -> float:
+def _type_dist(user_type: Optional[str], schol_type: Optional[str]) -> Optional[float]:
     """
-    Country match only considers UK/USA aliases. Anything else is ignored (0).
+    Nominal distance: 0 if equal, 1 if different; None if user didn't specify.
     """
-    uc = _norm_country(user_country)
-    sc = _norm_country(s_country)
-    if not uc or not sc:
-        return 0.0
-    return 1.0 if uc == sc else 0.0
+    if not user_type or not schol_type:
+        return None
+    return 0.0 if _casefold(user_type) == _casefold(schol_type) else 1.0
 
-def _gender_ok(user_gender: str, s_gender: str) -> float:
+def _gender_dist(user_gender: str, schol_gender: str) -> Optional[float]:
     """
-    If user = Male  -> match 'All' or 'Male' (not 'Female').
-    If user = Female-> match 'All' or 'Female' (not 'Male').
-    If user blank   -> only 'All' counts.
+    If schol = 'All' -> distance 0 (always ok).
+    If user blank    -> distance 1 unless schol is 'All' (already covered).
+    Else             -> distance 0 if exact match, 1 otherwise.
     """
     ug = _norm_gender(user_gender)
-    sg = _norm_gender(s_gender) or "all"
-
+    sg = _norm_gender(schol_gender) or "all"
     if sg == "all":
-        return 1.0
-    if ug == "":
         return 0.0
-    return 1.0 if ug == sg else 0.0
+    if ug == "":
+        return 1.0
+    return 0.0 if ug == sg else 1.0
 
-def _eligible_country_ok(user_country: str, s_ecountry) -> float:
+def _eligibility_dist(user_country: str, s_ecountry) -> Optional[float]:
     """
-    Returns:
-      1.0  -> user country explicitly allowed (UK/USA only after normalization)
-      0.7  -> scholarship is International (counts even if user country is blank)
-      0.0  -> otherwise
+    Returns distances:
+      exact eligible country (UK/USA) -> 0.0
+      'International'                 -> 0.3  (i.e., 1 - 0.7 similarity)
+      otherwise                       -> 1.0
+    If user country blank or not UK/USA, 'International' still yields 0.3.
     """
     uc = _norm_country(user_country)  # '' if not UK/USA or blank
 
     # Scholarship stores a list
     if isinstance(s_ecountry, list):
-        # International present?
         if any(_is_international(x) for x in s_ecountry):
-            return ELIG_INTERNATIONAL_SCORE
+            return 1.0 - ELIG_INTERNATIONAL_SCORE  # 0.3
         norm_set = {_norm_country(x) for x in s_ecountry if _norm_country(x)}
-        return 1.0 if (uc and uc in norm_set) else 0.0
+        if uc and uc in norm_set:
+            return 0.0
+        return 1.0
 
     # Scholarship stores a single value
     if _is_international(s_ecountry):
-        return ELIG_INTERNATIONAL_SCORE
+        return 1.0 - ELIG_INTERNATIONAL_SCORE
     sc = _norm_country(s_ecountry)
-    return 1.0 if (uc and sc and sc == uc) else 0.0
+    if uc and sc and sc == uc:
+        return 0.0
+    return 1.0
 
 # -----------------------------------------------------------------------------
-# Subjects: operate on ID sets (fast, no name mapping)
+# Subjects: operate on ID sets (fast, no name mapping) → Jaccard similarity
 # -----------------------------------------------------------------------------
 def _user_subject_id_set_from_userinfo(uinfo: Dict[str, Any]) -> set[str]:
-    """
-    User’s preferred subject IDs from prefs.fieldIds (strings/numbers) -> set of strings.
-    """
     ids = uinfo.get("fieldIds") or []
     out = [str(x).strip() for x in ids if str(x).strip()]
     return set(out)
@@ -251,7 +261,7 @@ def _scholar_subject_id_set(raw) -> set[str]:
 
 def _jaccard_ids(A: set[str], B: set[str]) -> float:
     """
-    Jaccard on ID sets. Scholarship wildcard → full match when user chose any.
+    Jaccard similarity on ID sets (0..1). Scholarship wildcard → full match when user chose any.
     """
     if "__ANY__" in B:
         return 1.0 if A else 0.0
@@ -261,16 +271,26 @@ def _jaccard_ids(A: set[str], B: set[str]) -> float:
     union = len(A | B)
     return inter / union if union else 0.0
 
-def _manhattan_similarity(u_vec: List[float], i_vec: List[float]) -> float:
+# -----------------------------------------------------------------------------
+# Gower dissimilarity (weighted average of per-feature distances)
+# -----------------------------------------------------------------------------
+def _gower_dissimilarity(dist_components: List[Optional[float]], weights: List[float]) -> float:
     """
-    L1 similarity in [0,1]: 1 - mean(|u - i|).
-    Assumes both vectors are scaled to [0,1].
+    Weighted Gower dissimilarity in [0,1]:
+        D = (Σ w_i * d_i) / (Σ w_i)
+    Ignores components that are None or weights <= 0.
+    If no component contributes, return 1.0 (so similarity = 0.0).
     """
-    if not u_vec or not i_vec or len(u_vec) != len(i_vec):
-        return 0.0
-    diffs = [abs(a - b) for a, b in zip(u_vec, i_vec)]
-    l1 = sum(diffs) / len(diffs)
-    return _clip01(1.0 - l1)
+    if not dist_components or not weights or len(dist_components) != len(weights):
+        return 1.0
+    num = 0.0
+    den = 0.0
+    for d_i, w_i in zip(dist_components, weights):
+        if d_i is None or w_i <= 0:
+            continue
+        num += w_i * _clip01(float(d_i))
+        den += w_i
+    return 1.0 if den <= 0 else num / den
 
 # -----------------------------------------------------------------------------
 # User info
@@ -285,22 +305,20 @@ def _get_userinfo(email: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"No user found for {email}")
 
     prefs = user.get("prefs", {}) or {}
-    # Normalize fieldIds to strings (keep both list & set forms easy)
     raw_ids = prefs.get("fieldIds") or []
     field_ids = [str(x).strip() for x in raw_ids if str(x).strip()]
 
-    # Normalize country now so downstream uses canonical tokens
     norm_country = _norm_country(prefs.get("country"))
 
     return {
         "email": user.get("email"),
         "display_name": user.get("name") or (user.get("email", "").split("@")[0] or "user"),
-        "country": norm_country,                         # canonical '' | 'uk' | 'usa'
         "level": _norm_str(prefs.get("level")),
         "min_gpa": _to_float(prefs.get("min_gpa"), 0.0),
-        "gender": _norm_gender(prefs.get("gender")),     # 'male' | 'female' | '' (blank)
-        "Ecountry": norm_country,                        # reuse user country for eligibility
-        "fieldIds": field_ids,                           # ← key for Jaccard on IDs
+        "gender": _norm_gender(prefs.get("gender")),   # 'male' | 'female' | ''
+        "Ecountry": norm_country,                       # canonical '' | 'uk' | 'usa'
+        "fieldIds": field_ids,
+        "prefer": prefs.get("prefer"),
     }
 
 def _collection_name_for_user(userinfo: Dict[str, Any]) -> str:
@@ -311,44 +329,44 @@ def _collection_name_for_user(userinfo: Dict[str, Any]) -> str:
     return f"{safe}ranking"
 
 # -----------------------------------------------------------------------------
-# Scoring: Manhattan (numeric) + Jaccard (subject IDs)
+# Scoring: (1 - Gower distance on mixed) + Jaccard (subject IDs)
 # -----------------------------------------------------------------------------
 def _calc_rank(s: Dict[str, Any], u: Dict[str, Any]) -> float:
     """
-    Final score in 0..100 (for continuity with min_rank filters).
-    Score = 100 * [ ALPHA * ManhattanSim(numeric) + BETA * Jaccard(subject IDs) ].
+    Final score in 0..100:
+      Score = 100 * [ ALPHA_NUMERIC * (1 - D_gower)
+                      + BETA_JACCARD  * Jaccard(subject IDs) ].
     """
     # Scholarship raw fields
-    s_country   = _norm_str(s.get("country"))
     s_level     = s.get("level")
     s_min_gpa   = _normalize_gpa(s.get("min_gpa"))
     s_gender    = _norm_str(s.get("Egender") or "All")
     s_ecountry  = s.get("Ecountry")
     s_deadline  = _parse_deadline_mixed(s.get("deadline"))
+    s_type      = s.get("type")
 
-    # Numeric components (all 0..1)
-    comp_level      = _level_match(u["level"], s_level)               # 0 or 1
-    comp_country    = _country_match(u["country"], s_country)         # 0 or 1 (UK/USA only)
-    comp_gender     = _gender_ok(u["gender"], s_gender)               # 0 or 1 with All logic
-    comp_elig       = _eligible_country_ok(u["Ecountry"], s_ecountry) # 1.0 | 0.7 | 0.0
-    comp_deadline   = _deadline_score(s_deadline)                     # 0..1
+    # Per-feature distances (0..1) — None means "not applicable / ignore"
+    d_level     = _level_dist(u["level"], s_level)                         # 0/1/None
+    d_type      = _type_dist(u.get("prefer"), s_type)                      # 0/1/None
+    d_gender    = _gender_dist(u["gender"], s_gender)                      # 0/1/None
+    d_elig      = _eligibility_dist(u["Ecountry"], s_ecountry)             # 0/0.3/1
+    d_deadline  = _deadline_dist(s_deadline)                               # 0..1
 
-    # GPA fit: 1 if user_gpa_norm >= min_gpa_norm, else linearly decays to 0
     user_gpa_norm = _normalize_gpa(u["min_gpa"])
-    gap = s_min_gpa - user_gpa_norm
-    comp_gpa = 1.0 if gap <= 0 else _clip01(1.0 - gap)
+    d_gpa      = _gpa_dist(user_gpa_norm, s_min_gpa)                       # 0..1
 
-    item_vec = [comp_level, comp_country, comp_gender, comp_elig, comp_deadline, comp_gpa]
-    user_vec = [1.0] * len(item_vec)  # ideal target: we want all matches
+    dist_components = [d_level, d_type, d_gender, d_elig, d_deadline, d_gpa]
+    weights         = [0.30,   0.20,   0.10,    0.10,   0.20,      0.10]
 
-    s_num = _manhattan_similarity(user_vec, item_vec)  # 0..1
+    D_gower = _gower_dissimilarity(dist_components, weights)               # 0..1
+    s_num   = 1.0 - D_gower                                                # similarity
 
-    # Jaccard on subject ID sets
-    u_ids = _user_subject_id_set_from_userinfo(u)          # set[str]
-    s_ids = _scholar_subject_id_set(s.get("fields"))       # set[str] (or {"__ANY__"})
-    s_sub = _jaccard_ids(u_ids, s_ids)                     # 0..1
+    # Jaccard on subject ID sets (similarity 0..1)
+    u_ids = _user_subject_id_set_from_userinfo(u)
+    s_ids = _scholar_subject_id_set(s.get("fields"))
+    s_sub = _jaccard_ids(u_ids, s_ids)
 
-    blended = (ALPHA_NUMERIC * s_num) + (BETA_JACCARD * s_sub)  # 0..1
+    blended = (ALPHA_NUMERIC * s_num) + (BETA_JACCARD * s_sub)             # 0..1
     return round(100.0 * blended, 2)
 
 # -----------------------------------------------------------------------------
@@ -362,20 +380,20 @@ def build_user_ranking(email: str):
     """
     try:
         uinfo = _get_userinfo(email)
-
         ranking_name = _collection_name_for_user(uinfo)
         ranking_col = db[ranking_name]
 
         # Only fetch fields we actually score on (smaller payload = faster)
         PROJ = {
             "_id": 1,
-            "country": 1,
+            "country": 1,    # not used in score, but harmless to keep
             "level": 1,
             "min_gpa": 1,
             "Egender": 1,
             "Ecountry": 1,
             "deadline": 1,
             "fields": 1,
+            "type": 1,
         }
 
         ranked: List[Dict[str, Any]] = []
@@ -389,9 +407,6 @@ def build_user_ranking(email: str):
 
         ranking_col.delete_many({})
         if ranked:
-            # If you expect many rows, insert in chunks to be extra safe:
-            # for i in range(0, len(ranked), 5000):
-            #     ranking_col.insert_many(ranked[i:i+5000])
             ranking_col.insert_many(ranked)
 
         return {

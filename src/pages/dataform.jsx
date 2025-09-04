@@ -87,20 +87,30 @@ const DataForm = () => {
           </div>
         </div>
 
-        {/* GPA */}
-        <div className="mb-6">
-          <label className="text-base text-[#254085] font-bold block mb-2">GPA</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            max="4"
-            placeholder="Enter GPA (e.g., 3.50)"
-            value={gpa}
-            onChange={(e) => setGpa(e.target.value)}
-            className="w-full px-4 py-2 rounded border bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254085]"
-          />
-        </div>
+    {/* GPA */}
+<div className="mb-6">
+  <label className="text-base text-[#254085] font-bold block mb-2">GPA</label>
+  <input
+    type="number"
+    step="0.01"
+    min="0"
+    max="4"
+    placeholder="Enter GPA (e.g., 3.50)"
+    value={gpa}
+    onChange={(e) => {
+      let val = parseFloat(e.target.value);
+      if (isNaN(val)) {
+        setGpa("");
+      } else if (val > 4) {
+        setGpa("4.00"); // cap at 4
+      } else {
+        setGpa(e.target.value);
+      }
+    }}
+    className="w-full px-4 py-2 rounded border bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254085]"
+  />
+</div>
+
 
         {/* Navigation buttons */}
         <div className="flex justify-between">
