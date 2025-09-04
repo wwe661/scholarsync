@@ -239,7 +239,7 @@ const AuthPage = () => {
 
         <div className="hidden lg:block flex-1 bg-white p-8 text-center">
           <img src="/login.jpg" alt="Login Graphic" className="max-w-[450px] mx-auto mb-3" />
-          <h2 className="text-3xl font-semibold text-[#003087]">EduCompact</h2>
+          <h2 className="text-3xl font-semibold text-[#003087]">EduCompass</h2>
         </div>
       </div>
     </div>
