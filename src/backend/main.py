@@ -1174,8 +1174,8 @@ from email.mime.multipart import MIMEMultipart
 
 def send_email(to_email, subject, body_html, body_text="This email requires an HTML-compatible client."):
     print('mailing')
-    from_email = "wwewinter661@gmail.com"
-    password = "hohg sbdr phld touc"  # Gmail app password
+    from_email = "educompassmyanmar@gmail.com"
+    password = "jwpv shwe cqnh zatb"  # Gmail app password
 
     # Create the email
     msg = MIMEMultipart("alternative")
