@@ -202,7 +202,7 @@ const Navbar = () => {
       {/* Branding */}
       <div className="flex items-center gap-2">
         <img src="logo.png" alt="ScholarSync Logo" className="w-10 h-10" />
-        <span className="font-semibold text-lg text-white">ScholarSync</span>
+        <span className="font-semibold text-lg text-white">EduCompass</span>
       </div>
 
       {/* Menu */}

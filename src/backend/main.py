@@ -1202,29 +1202,70 @@ def send_email(to_email, subject, body_html, body_text="This email requires an H
 # USERS
 @app.get("/admin/users")
 def admin_get_users():
-    users = list(users_col.find({}, {"_id": 1, "email": 1, "created_at": 1, "updatedAt": 1}))
+    users = list(users_col.find({}, {"_id": 1, "email": 1, "created_at": 1}))
     for u in users:
         u["_id"] = str(u["_id"])
         # Convert datetime to ISO string for frontend
         u["created_at"] = u.get("created_at").isoformat() if u.get("created_at") else None
-        u["updatedAt"] = u.get("updatedAt").isoformat() if u.get("updatedAt") else None
+        # u["updatedAt"] = u.get("updatedAt").isoformat() if u.get("updatedAt") else None
     return {"items": users, "total": len(users)}
 
 
 
+def _collection_name_for_user(email: str) -> str:
+    """
+    Name pattern: "<safeDisplayName>ranking"
+    """
+    local = (email or "").split("@")[0]
+    alnum = re.sub(r"[^A-Za-z0-9]", "", local)
+    prefix = (alnum or "user").lower()
+    return f"{prefix}ranking"
+
+
+def _safe_collection_name(email: str) -> str:
+    """
+    Build a per-user collection name for university ranking.
+    Example: 'rika@gmail.com' -> 'rikauniranking'
+    """
+    local = (email or "").split("@")[0]
+    alnum = re.sub(r"[^A-Za-z0-9]", "", local)
+    prefix = (alnum or "user").lower()
+    return f"{prefix}uniranking"
 
 
 
 @app.delete("/admin/users/{user_id}")
+
 def delete_user(user_id: str):
     try:
         oid = ObjectId(user_id)
     except InvalidId:
         raise HTTPException(status_code=400, detail=f"Invalid user ID: {user_id}")
+    
+    user = users_col.find_one({"_id": oid}, {"email": 1, "_id": 0})
+    if not user or "email" not in user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    email = user["email"]
+
+    # Delete notifications
+    notifications.delete_many({"mail": email})
+    
+    # Drop user-specific collections
+    scholarcolname = _collection_name_for_user(email)
+    print(scholarcolname)
+    db.drop_collection(scholarcolname)
+    
+    unicolname = _safe_collection_name(email)
+    print(unicolname)
+    db.drop_collection(unicolname)
+    
+    # Delete user record
     result = users_col.delete_one({"_id": oid})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"ok": True, "msg": "User deleted"}
+        raise HTTPException(status_code=404, detail="User not found in collection")
+
+    return {"ok": True, "msg": f"User {email} deleted"}
 
 
 # SCHOLARSHIPS

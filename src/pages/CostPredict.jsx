@@ -1,7 +1,10 @@
 // src/pages/CostPredict.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+
+
 
 /**
  * Currency list (meta only). Rates are fetched live below.
@@ -72,7 +75,7 @@ async function fetchUsdRates() {
 export default function CostPredict() {
   const params = new URLSearchParams(window.location.search);
   const uniName = params.get("university") || params.get("u") || "";
-
+const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [program, setProgram] = useState("");
   const [level, setLevel] = useState("");

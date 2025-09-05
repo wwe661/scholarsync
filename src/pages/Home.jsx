@@ -99,9 +99,9 @@ useEffect(() => {
     <p className="text-md mb-2">Scholarships for every type of student</p>
     <p className="text-md mb-4">100% Free</p>
     <p className="text-lg mb-6">Vetted Scholarship Opportunities</p>
-    <button className="bg-[#254085] text-white font-semibold px-6 py-3 rounded-full hover:bg-[#1e3369]">
+    <p className="text-lg font-semibold text-[#254085]">
       Find Scholarships Now
-    </button>
+    </p>
   </div>
 </div>
 

@@ -230,8 +230,8 @@ export default function Admin() {
     return items.filter(
       (row) =>
         (row.email || "").toLowerCase().includes(q) ||
-        (row.created_at || "").toLowerCase().includes(q) ||
-        (row.updatedAt || row.updated_at || "").toLowerCase().includes(q) // <-- added updated_at
+        (row.created_at || "").toLowerCase().includes(q) 
+       // (row.updatedAt || row.updated_at || "").toLowerCase().includes(q) // <-- added updated_at
     );
   }, [items, query]);
 
@@ -632,7 +632,7 @@ export default function Admin() {
       <header className="bg-[#254085] text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3 font-bold text-lg">
           <img src="/logo.png" alt="Logo" className="h-8 w-8 rounded" />
-          ScholarSync
+          EduCompass
         </div>
 
         <div className="flex items-center gap-2">
@@ -1551,11 +1551,11 @@ export default function Admin() {
               ).toLocaleString()
             : "N/A";
 
-          const updatedAt = selectedUser.updatedAt
-            ? new Date(
-                selectedUser.updatedAt.replace(/"/g, "")
-              ).toLocaleString()
-            : "N/A";
+          // const updatedAt = selectedUser.updatedAt
+          //   ? new Date(
+          //       selectedUser.updatedAt.replace(/"/g, "")
+          //     ).toLocaleString()
+          //   : "N/A";
 
           console.log("Selected user:", selectedUser);
 
@@ -1580,10 +1580,10 @@ export default function Admin() {
                     <span className="font-semibold">Created At:</span>{" "}
                     {createdAt}
                   </p>
-                  <p>
+                  {/* <p>
                     <span className="font-semibold">Updated At:</span>{" "}
                     {updatedAt}
-                  </p>
+                  </p> */}
                 </div>
                 <div className="flex justify-end mt-4">
                   <button
